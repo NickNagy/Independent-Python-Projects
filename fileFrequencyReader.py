@@ -51,14 +51,17 @@ numChannels = int(channelsString)
 dataList = []
 
 # store second column (channel input) of DAT file in a list
-if numChannels == 1:
-    for dataLine in soundFile:
-        dataLine = " ".join(re.split("\s+", dataLine.strip(), flags = re.UNICODE))
-        dataLineList = dataLine.split(" ")
-        dataLineChannelVal = dataLineList[len(dataLineList)-1]
-        #print(dataLineChannelVal)
-        dataLineChannelVal = float(dataLineChannelVal)
-        dataList.append(dataLineChannelVal)
+for dataLine in soundFile:
+    dataLine = " ".join(re.split("\s+", dataLine.strip(), flags = re.UNICODE))
+    dataLineList = dataLine.split(" ")
+    dataLineVal = 0
+    if numChannels == 2:
+        dataLineLeftVal = float(dataLineList[2])
+        dataLineRightVal = float(dataLineList[len(dataLineList)-1])
+        dataLineVal = 0.5*(dataLineLeftVal + dataLineRightVal) # take average of both channels
+    else: # numChannels == 1
+        dataLineVal = float(dataLineList[len(dataLineList)-1])
+    dataList.append(dataLineVal)
 
 index = 0
 
@@ -70,4 +73,3 @@ while index < len(dataList):
     index += fs*READS_PER_SEC
 
 print(fileFreqSequence)
-
