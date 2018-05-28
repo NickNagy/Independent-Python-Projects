@@ -2,7 +2,7 @@ import re
 from scipy.fftpack import fft, fftfreq
 import numpy as np
 
-FILE_NAME = '440Hz.dat'
+FILE_NAME = 'eminor.dat'
 READS_PER_SEC = 1
 
 fileFreqSequence = [] # to use for sequential frequency storage
