@@ -49,24 +49,23 @@ numChannels = int(channelsString)
 
 dataList = []
 
-dataLine = soundFile.readline()
-
 # store second column (channel input) of DAT file in a list
 if numChannels == 1:
-    while dataLine is not None:
+    for dataLine in soundFile:
         dataLine = " ".join(re.split("\s+", dataLine.strip(), flags = re.UNICODE))
-        dataList.append(int(dataLine[3]))
-        dataLine = soundFile.readline()
+        dataLineList = dataLine.split(" ")
+        dataLineChannelVal = dataLineList[len(dataLineList)-1]
+        #print(dataLineChannelVal)
+        dataLineChannelVal = float(dataLineChannelVal)
+        dataList.append(dataLineChannelVal)
 
 index = 0
 
 # store frequencies in fileFreqSequence while reading through file
 while index < len(dataList):
     freq, amp = fft_ups(dataList[index:index+(fs*READS_PER_SEC)], fs)
+    # TODO 'numpy.ndarray' object has no attribute 'index'
     freqProminent = freq[amp.index(max(amp))] # freq[index of max amplitude]
     fileFreqSequence.apppend(freqProminent)
     index += fs*READS_PER_SEC
 
-# ----------------------------------------------------------------
-
-# Below from Tensorflow: https://www.tensorflow.org/tutorials/recurrent
