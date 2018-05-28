@@ -1,5 +1,6 @@
 import re
 from scipy.fftpack import fft, fftfreq
+import numpy as np
 import tensorflow as tf
 
 FILE_NAME = '440Hz.dat'
@@ -49,8 +50,6 @@ numChannels = int(channelsString)
 
 dataList = []
 
-# TODO handle 2 channel input case
-
 # store second column (channel input) of DAT file in a list
 if numChannels == 1:
     for dataLine in soundFile:
@@ -66,8 +65,9 @@ index = 0
 # store frequencies in fileFreqSequence while reading through file
 while index < len(dataList):
     freq, amp = fft_ups(dataList[index:index+(fs*READS_PER_SEC)], fs)
-    # TODO 'numpy.ndarray' object has no attribute 'index'
-    freqProminent = freq[amp.index(max(amp))] # freq[index of max amplitude]
-    fileFreqSequence.apppend(freqProminent)
+    freqProminent = freq[np.argmax(amp)] # freq[index of max amplitude]
+    fileFreqSequence.append(freqProminent)
     index += fs*READS_PER_SEC
+
+print(fileFreqSequence)
 
