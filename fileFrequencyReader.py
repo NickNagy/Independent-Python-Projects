@@ -1,9 +1,10 @@
 import re
 from scipy.fftpack import fft, fftfreq
 import numpy as np
+import tensorflow as tf
 
 FILE_NAME = 'eminor.dat'
-READS_PER_SEC = 1
+READS_PER_SEC = 2
 
 fileFreqSequence = [] # to use for sequential frequency storage
 
@@ -66,9 +67,18 @@ index = 0
 
 # store frequencies in fileFreqSequence while reading through file
 while index < len(dataList):
-    freq, amp = fft_ups(dataList[index:index+(fs*READS_PER_SEC)], fs)
+    freq, amp = fft_ups(dataList[index:index+int(fs/READS_PER_SEC)], fs)
     freqProminent = freq[np.argmax(amp)] # freq[index of max amplitude]
     fileFreqSequence.append(freqProminent)
-    index += fs*READS_PER_SEC
+    index += int(fs/READS_PER_SEC)
 
 print(fileFreqSequence)
+
+# play back
+import winsound
+sequenceLength = len(fileFreqSequence)
+i = 0
+while i < sequenceLength:
+    print(i)
+    winsound.Beep(int(fileFreqSequence[i]), 500)
+    i += 1
