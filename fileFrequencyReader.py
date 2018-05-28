@@ -1,7 +1,6 @@
 import re
 from scipy.fftpack import fft, fftfreq
 import numpy as np
-import tensorflow as tf
 
 FILE_NAME = '440Hz.dat'
 READS_PER_SEC = 1
