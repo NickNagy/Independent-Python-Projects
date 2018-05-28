@@ -49,6 +49,8 @@ numChannels = int(channelsString)
 
 dataList = []
 
+# TODO handle 2 channel input case
+
 # store second column (channel input) of DAT file in a list
 if numChannels == 1:
     for dataLine in soundFile:
