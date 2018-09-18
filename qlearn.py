@@ -155,10 +155,12 @@ class Frogger_Agent:
 
 
 class Frogger_Environment:
+
     def __init__(self, shape):
-        self.grid = np.ones(shape=shape)
-        self.grid[0] *= 200
+        self.grid = np.zeros(shape=shape)
+        self.grid[0] = 200
         for row in range(1, np.shape(self.grid)[0] - 1):  # exclude bottom & top row
+            self.grid[row] += (np.shape(self.grid)[0] - 1 - row)
             self.grid[row][random.randint(0, np.shape(self.grid)[1] - 1)] = DEATH
 
     def update(self):
