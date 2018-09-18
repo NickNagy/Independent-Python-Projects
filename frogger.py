@@ -48,6 +48,7 @@ class QLearn:
         key+=str(int(grid[(location[0]+1)%self.grid_shape[0]][(location[1] + 1)%self.grid_shape[1]] < 0))
         return key
 
+    # TODO: improve the abstraction, make the following more specific to Frogger rather than QLearn
     def get_state(self, location):
         key = self.get_state_key(location)
         #print("STATE: " + str(self.states[key]))
