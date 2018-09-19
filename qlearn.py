@@ -200,7 +200,7 @@ START_Y = ENVIRONMENT_HEIGHT - 1
 start = (START_X, START_Y)
 shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
 
-agent = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
+frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
                environment=Frogger_Environment(shape=shape),
                start=start)
-agent.learn()
+frogger_q.learn()
