@@ -4,6 +4,7 @@ import copy
 from matplotlib import pyplot as plt
 
 class QLearn:
+    
     def __init__(self, agent, environment, start):
         self.memorygrid = 255 * np.ones(environment.get_shape())
         self.agent = agent
