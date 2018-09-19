@@ -18,11 +18,6 @@ class QLearn:
         self.gamma = 0.9
         self.epsilon = 1
 
-    """params
-        location: tuple, location in state table
-        action:, integer, corresponding to index in actions
-    """
-
     def learn(self):
         fig, ax = plt.subplots(2, 2)
         while (True):
