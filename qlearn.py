@@ -3,18 +3,19 @@ import random
 import copy
 from matplotlib import pyplot as plt
 
+
 class QLearn:
-    
     """params:
             agent: class, need following defined functions: 
                 get_actions(), get_location(), get_state(), get_state_key(), get_value(), update_state(), update_location(), 
-                display_state(), can_move(), move()
+                display_state(), can_move(), move(), has_failed(), has_succeeded()
             environment: class, need following defined functions:
                 update(), get_grid(), get_shape(), display()
             start: tuple, starting position for agent
        returns: none
        initializes class
     """
+
     def __init__(self, agent, environment, start):
         self.memorygrid = 255 * np.ones(environment.get_shape())
         self.agent = agent
@@ -33,6 +34,7 @@ class QLearn:
         returns: none
         runs q-learning algorithm, updates agent location and q-states, displays environment and relevant data
     """
+
     def learn(self):
         fig, ax = plt.subplots(2, 2)
         while (True):
@@ -52,19 +54,18 @@ class QLearn:
                 next_reward = grid[next_location[0]][next_location[1]]
                 current_key = self.agent.get_state_key(curr_location, self.environment)
                 q = curr_state[action] + self.alpha * (next_reward + (self.gamma * next_projection) -
-                                                                   curr_state[action])
+                                                       curr_state[action])
                 self.agent.update_state(current_key, action, q)
                 self.display(axis=ax)
                 self.memorygrid[curr_location[0]][curr_location[1]] *= 0.9
                 self.agent.update_location(next_location)
                 self.moves += 1
                 if self.epsilon > 0.1: self.epsilon -= 0.01
-                if grid[next_location[0]][next_location[1]] == DEATH:
+                if self.agent.has_failed(self.environment):
                     self.agent.update_location(self.start)
                     self.attempts += 1
                     self.moves = 0
-                # TODO: improve abstraction of success check
-                if next_location[0] == 0:
+                if self.agent.has_succeeded(self.environment):
                     self.wins += 1
                     self.attempts += 1
                     self.moves = 0
@@ -76,6 +77,7 @@ class QLearn:
         returns: none
         displays environment grid, memory grid, state, and other relevant visual information
     """
+
     def display(self, axis):
         plt.suptitle("Wins: " + str(self.wins) + "; Attempt: " + str(self.attempts) + "; Moves: " + str(
             self.moves) + "; Q-state: [" + ' '.join(
@@ -89,13 +91,13 @@ class QLearn:
 
 
 class Frogger_Agent:
-    
     """params:
             actions: list, set of all possible actions for agent
             location: tuple, initial agent XY location
        returns: none
        initializes agent
     """
+
     def __init__(self, actions, location):
         self.actions = actions
         self.location = location
@@ -158,7 +160,7 @@ class Frogger_Agent:
     # updates the action in the state specified by key to the given value
     def update_state(self, key, action, value):
         self.states[key][action] = value
-        
+
     # returns True if the action, given the environment and current agent location, is permissible; False otherwise
     def can_move(self, action, environment):
         grid = environment.get_grid()
@@ -183,13 +185,21 @@ class Frogger_Agent:
             return (self.location[0], self.location[1] - 1)
         else:
             return (self.location[0], self.location[1] + 1)
+    
+    # returns True if agent's location is same as car's location on environment grid; False otherwise
+    def has_failed(self, environment):
+        return environment.get_grid()[self.location[0]][self.location[1]] == DEATH
+        
+    # returns True if agent has made it to top row of environment grid; False otherwise
+    def has_succeeded(self, environment):
+        return self.location[0] == 0
 
 
 class Frogger_Environment:
-
     """params:
             shape: tuple, shape of environm
     """
+
     def __init__(self, shape):
         self.grid = np.zeros(shape=shape)
         self.grid[0] = 200
@@ -232,6 +242,7 @@ SUCCESS = 255
 plt.gray()
 
 import os
+
 os.chdir("D:/frogger")
 
 ENVIRONMENT_WIDTH = 5
@@ -244,6 +255,6 @@ start = (START_X, START_Y)
 shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
 
 frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
-               environment=Frogger_Environment(shape=shape),
-               start=start)
+                   environment=Frogger_Environment(shape=shape),
+                   start=start)
 frogger_q.learn()
