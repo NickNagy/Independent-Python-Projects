@@ -115,14 +115,15 @@ class Frogger_Agent:
     def get_state_key(self, location, environment):
         key = ""
         grid = environment.get_grid()
+        grid_shape = np.shape(grid)
         key += str(int(grid[location[0] - 1][location[1] - 1] < 0))
         key += str(int(grid[location[0] - 1][location[1]] < 0))
-        key += str(int(grid[location[0] - 1][(location[1] + 1) % np.shape(grid)[1]] < 0))
+        key += str(int(grid[location[0] - 1][(location[1] + 1) % grid_shape[1]] < 0))
         key += str(int(grid[location[0]][location[1] - 1] < 0))
-        key += str(int(grid[location[0]][(location[1] + 1) % np.shape(grid)[1]] < 0))
-        key += str(int(grid[(location[0] + 1) % np.shape(grid)[0]][location[1] - 1] < 0))
-        key += str(int(grid[(location[0] + 1) % np.shape(grid)[0]][location[1]] < 0))
-        key += str(int(grid[(location[0] + 1) % np.shape(grid)[0]][(location[1] + 1) % np.shape(grid)[1]] < 0))
+        key += str(int(grid[location[0]][(location[1] + 1) % grid_shape[1]] < 0))
+        key += str(int(grid[(location[0] + 1) % grid_shape[0]][location[1] - 1] < 0))
+        key += str(int(grid[(location[0] + 1) % grid_shape[0]][location[1]] < 0))
+        key += str(int(grid[(location[0] + 1) % grid_shape[0]][(location[1] + 1) % grid_shape[1]] < 0))
         return key
 
     # returns the state associated with the current location and environment
