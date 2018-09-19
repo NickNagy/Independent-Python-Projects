@@ -5,6 +5,16 @@ from matplotlib import pyplot as plt
 
 class QLearn:
     
+    """params:
+            agent: class, need following defined functions: 
+                get_actions(), get_location(), get_state(), get_state_key(), get_value(), update_state(), update_location(), 
+                display_state(), can_move(), move()
+            environment: class, need following defined functions:
+                update(), get_grid(), get_shape(), display()
+            start: tuple, starting position for agent
+       returns: none
+       initializes class
+    """
     def __init__(self, agent, environment, start):
         self.memorygrid = 255 * np.ones(environment.get_shape())
         self.agent = agent
@@ -19,6 +29,10 @@ class QLearn:
         self.gamma = 0.9
         self.epsilon = 1
 
+    """ params: none
+        returns: none
+        runs q-learning algorithm, updates agent location and q-states, displays environment and relevant data
+    """
     def learn(self):
         fig, ax = plt.subplots(2, 2)
         while (True):
@@ -33,11 +47,11 @@ class QLearn:
             if self.agent.can_move(action):
                 grid = self.environment.get_grid()
                 next_location = self.agent.move(action)
-                next_state = self.agent.get_state(next_location)
+                next_state = self.agent.get_state(next_location, self.environment)
                 next_projection = max(next_state)
                 next_reward = grid[next_location[0]][next_location[1]]
-                current_key = self.agent.get_state_key(curr_location)
-                q = self.agent.get_state()[action] + self.alpha * (next_reward + (self.gamma * next_projection) -
+                current_key = self.agent.get_state_key(curr_location, self.environment)
+                q = curr_state[action] + self.alpha * (next_reward + (self.gamma * next_projection) -
                                                                    curr_state[action])
                 self.agent.update_state(current_key, action, q)
                 self.display(axis=ax)
@@ -45,7 +59,7 @@ class QLearn:
                 self.agent.update_location(next_location)
                 self.moves += 1
                 if self.epsilon > 0.1: self.epsilon -= 0.01
-                if self.environment.get_grid()[next_location[0]][next_location[1]] == DEATH:
+                if grid[next_location[0]][next_location[1]] == DEATH:
                     self.agent.update_location(self.start)
                     self.attempts += 1
                     self.moves = 0
@@ -57,6 +71,10 @@ class QLearn:
                 self.environment.update()
                 # plt.show()
 
+    """ params: axis
+        returns: none
+        displays environment grid, memory grid, state, and other relevant visual information
+    """
     def display(self, axis):
         plt.suptitle("Wins: " + str(self.wins) + "; Attempt: " + str(self.attempts) + "; Moves: " + str(
             self.moves) + "; Q-state: [" + ' '.join(
@@ -71,6 +89,12 @@ class QLearn:
 
 class Frogger_Agent:
     
+    """params:
+            actions: list, set of all possible actions for agent
+            location: tuple, initial agent XY location
+       returns: none
+       initializes agent
+    """
     def __init__(self, actions, location):
         self.actions = actions
         self.location = location
@@ -79,12 +103,15 @@ class Frogger_Agent:
             self.states[str('{0:08b}'.format(i))] = [0, 0, 0, 0]
         self.value = 25
 
+    # returns a copy of the agent's actions
     def get_actions(self):
         return copy.deepcopy(self.actions)
 
+    # returns a copy of the agent's location as a tuple
     def get_location(self):
         return copy.deepcopy(self.location)
 
+    # returns the key associated with the current location and environment
     def get_state_key(self, location, environment):
         key = ""
         grid = environment.get_grid()
@@ -98,13 +125,16 @@ class Frogger_Agent:
         key += str(int(grid[(location[0] + 1) % np.shape(grid)[0]][(location[1] + 1) % np.shape(grid)[1]] < 0))
         return key
 
-    def get_state(self, location):
-        key = self.get_state_key(location)
+    # returns the state associated with the current location and environment
+    def get_state(self, location, environment):
+        key = self.get_state_key(location, environment)
         return copy.deepcopy(self.states[key])
 
+    # returns a copy of the agent's value
     def get_value(self):
         return copy.deepcopy(self.value)
 
+    # returns a visual representation of the key state
     def display_state(self, key):
         state_display = np.zeros(shape=(3, 3))
         state_display[0][0] = int(key[0])
@@ -119,12 +149,15 @@ class Frogger_Agent:
         state_display[1][1] = self.value
         return state_display
 
+    # updates the agent's location
     def update_location(self, location):
         self.location = location
 
+    # updates the action in the state specified by key to the given value
     def update_state(self, key, action, value):
         self.states[key][action] = value
-
+        
+    # returns True if the action, given the environment and current agent location, is permissible; False otherwise
     def can_move(self, action, environment):
         grid = environment.get_grid()
         if action == 0 and self.location[0] <= 0: return False
@@ -138,6 +171,7 @@ class Frogger_Agent:
             return False
         return True
 
+    # returns a tuple: the location determined by taking the specified action from the agent's current location
     def move(self, action):
         if action == 0:
             return (self.location[0] - 1, self.location[1])
@@ -151,6 +185,9 @@ class Frogger_Agent:
 
 class Frogger_Environment:
 
+    """params:
+            shape: tuple, shape of environm
+    """
     def __init__(self, shape):
         self.grid = np.zeros(shape=shape)
         self.grid[0] = 200
@@ -158,6 +195,7 @@ class Frogger_Environment:
             self.grid[row] += (np.shape(self.grid)[0] - 1 - row)
             self.grid[row][random.randint(0, np.shape(self.grid)[1] - 1)] = DEATH
 
+    # updates the rows with cars 
     def update(self):
         for row in range(1, np.shape(self.grid)[0] - 1):
             if row % 2 == 0:
@@ -165,12 +203,15 @@ class Frogger_Environment:
             else:
                 self.grid[row] = np.roll(self.grid[row], -1)
 
+    # returns a copy of the environment grid
     def get_grid(self):
         return copy.deepcopy(self.grid)
 
+    # returns the shape of the environment grid as a tuple
     def get_shape(self):
         return np.shape(self.grid)
 
+    # returns a display of the environmnet grid
     def display(self, agent_loc, agent_val):
         # board display shows cars one step behind for purposes of state identification vs visual updates
         board = self.get_grid()
