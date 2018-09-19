@@ -69,6 +69,7 @@ class QLearn:
 
 
 class Frogger_Agent:
+    
     def __init__(self, actions, location):
         self.actions = actions
         self.location = location
@@ -76,7 +77,6 @@ class Frogger_Agent:
         for i in range(0, 256):
             self.states[str('{0:08b}'.format(i))] = [0, 0, 0, 0]
         self.value = 25
-        return 0
 
     def get_actions(self):
         return copy.deepcopy(self.actions)
@@ -128,7 +128,6 @@ class Frogger_Agent:
         grid = environment.get_grid()
         if action == 0 and self.location[0] <= 0: return False
         if action == 1 and self.location[0] >= np.shape(grid)[0] - 1: return False
-        # TODO: can't hop over a car!
         if action == 2 and (self.location[1] <= 0 or (self.location[0] % 2 == 0 and
                                                               grid[self.location[0]][self.location[1]] == DEATH)):
             return False
