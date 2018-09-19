@@ -63,6 +63,7 @@ class QLearn:
                     self.agent.update_location(self.start)
                     self.attempts += 1
                     self.moves = 0
+                # TODO: improve abstraction of success check
                 if next_location[0] == 0:
                     self.wins += 1
                     self.attempts += 1
