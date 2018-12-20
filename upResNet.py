@@ -4,33 +4,40 @@ The format of this file is influenced by jakeret's implementation of Unet
 
 import numpy as np
 import tensorflow as tf
+from matplotlib import pyplot as plt
 import os
+
 
 # layers & variable definitions
 def weight_variable(shape, stddev, name="weight"):
     return tf.Variable(tf.truncated_normal(shape, stddev=stddev), name=name)
 
-def bias_variable(shape, name="bias"):
-    return tf.Variable(tf.constant(0.1,shape=shape),name=name)
 
-def conv2d(x,W,b,keep_prob_):
+def bias_variable(shape, name="bias"):
+    return tf.Variable(tf.constant(0.1, shape=shape), name=name)
+
+
+def conv2d(x, W, b, keep_prob_):
     with tf.name_scope("conv2d"):
-        return tf.nn.dropout(tf.nn.bias_add(tf.nn.conv2d(x,W,strides=[1,1,1,1],padding='VALID'),b), keep_prob_)
+        return tf.nn.dropout(tf.nn.bias_add(tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='VALID'), b), keep_prob_)
+
 
 # TODO: I want a pattern of upscaling like so: (200x200,300x300,400x400,600x600,800x800,1200x1200,1600x1600...)
-def deconv2d(x,W,midpoint,stride):
+def deconv2d(x, W, midpoint, stride):
     with tf.name_scope("deconv2d"):
         x_shape = tf.shape(x)
         if midpoint:
             ratio = 1.5
-        else
+        else:
             ratio = 1.3333
-        output_shape = tf.stack([x_shape[0],x_shape[1]*ratio, x_shape[2]*ratio, x_shape[3]//2])
-        return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1,stride,stride,1], padding='VALID', name="conv2d_transpose")
+        output_shape = tf.stack([x_shape[0], x_shape[1] * ratio, x_shape[2] * ratio, x_shape[3] // 2])
+        return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID',
+                                      name="conv2d_transpose")
+
 
 # no pooling layers
-def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, features_root=16, filter_size=3, deconv_size=2, summaries=True):
-
+def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, features_root=16, filter_size=3, deconv_size=2,
+                    summaries=True):
     """
     :param x: input tensor, shape [?,width,height,channels]
     :param keep_prob: dropout probability tensor
@@ -45,7 +52,7 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
 
     logging.info("Resolution x{resolution}, features {features}, filter size {filter_size}x{filter_size}".format(
         resolution=resolution,
-        features = features_root,
+        features=features_root,
         filter_size=filter_size))
 
     with tf.name_scope("preprocessing"):
@@ -59,46 +66,46 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
     convs = []
     convsDict = OrderedDict()
     deconvsDict = OrderedDict()
-    
+
     size = width
     which_conv = 0
     which_up_conv = 0
     features = channels
-    while size < (width*resolution):
+    while size < (width * resolution):
         # Convolutions...
         with tf.name_scope("Conv{}".format(str(which_conv))):
 
             # TODO: decide on how many features I want @ each step
             prev_step_features = features
             features = features_root
-            stddev = np.sqrt(2 / (filter_size**2*features))
+            stddev = np.sqrt(2 / (filter_size ** 2 * features))
 
             w1 = weight_variable([filter_size, filter_size, prev_step_features, features], stddev, name="w1")
             w2 = weight_variable([filter_size, filter_size, features, features], stddev, name="w2")
-            
+
             b1 = bias_variable([features], name="b1")
             b2 = bias_variable([features], name="b2")
 
             if padding:
-                in_node = tf.pad(in_node, paddings=[[0,0],[1,1],[1,1],[0,0]], mode='SYMMETRIC')
+                in_node = tf.pad(in_node, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
             conv1 = conv2d(in_node, w1, b1, keep_prob)
             tmp_conv = tf.nn.relu(conv1)
             convsDict[which_conv] = tmp_conv
             which_conv += 1
             if padding:
-                tmp_conv = tf.pad(tmp_conv, paddings=[[0,0],[1,1],[1,1],[0,0]], mode='SYMMETRIC')
+                tmp_conv = tf.pad(tmp_conv, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
             conv2 = conv2d(tmp_conv, w2, b2, keep_prob)
             convsDict[which_conv] = tf.nn.relu(conv2)
 
-            weights.append((w1,w2))
-            biases.append((b1,b2))
-            convs.append((conv1,conv2))
+            weights.append((w1, w2))
+            biases.append((b1, b2))
+            convs.append((conv1, conv2))
 
         # Upscalings...
         with tf.name_scope("Up_Conv{}".format(which_up_conv)):
             in_node = convsDict[which_conv]
-            midpoint = which_up_conv%2 != 0
-            wd = weight_variable([deconv_size, deconv_size,features,features], stddev, name="wd") #what is the size?
+            midpoint = which_up_conv % 2 != 0
+            wd = weight_variable([deconv_size, deconv_size, features, features], stddev, name="wd")  # what is the size?
             bd = bias_variable([features], name="bd")
             deconv = tf.nn.relu(deconv2d(in_node, wd, midpoint, deconv_size) + bd)
             deconvDict[which_up_conv] = deconv
@@ -106,16 +113,16 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
             which_up_conv += 1
             if midpoint:
                 size *= 1.5
-            else
+            else:
                 size *= 1.3333
 
     # output
     with tf.name_scope("output"):
-        weight = weight_variable([1,1, features_root, channels], stddev)
+        weight = weight_variable([1, 1, features_root, channels], stddev)
         bias = bias_variable([channels], name="bias")
         conv = conv2d(in_node, weight, bias, tf.constant(1.0))
         output = tf.nn.relu(conv)
-        convsDict("out") = output
+        convsDict["out"] = output
 
     if summaries:
         with tf.name_scope("summaries"):
@@ -124,8 +131,8 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
                 tf.summary.image('summary_conv_%02d_02' % i, get_image_summary(c2))
             tf.summary.image('summary_output', get_image_summary(convsDict("out")))
             for k in deconvsDict.keys():
-                tf.summary.image('summary_deconv_%02d' % k, get_image_summary(deconvsDict[k])))
-            
+                tf.summary.image('summary_deconv_%02d' % k, get_image_summary(deconvsDict[k]))
+
     variables = []
     for w1, w2 in weights:
         variables.append(w1)
@@ -136,17 +143,17 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
 
     return output, variables
 
-class upResNet(object):
 
-    def __init__ (self, padding, channels=3, resolution=2):
+class upResNet(object):
+    def __init__(self, padding, channels=3, resolution=2):
         tf.reset_default_graph()
 
         self.summaries = kwargs.get("summaries", True)
 
-        self.x = tf.placeholder("float", shape=[None,None,None,channels], name='x')
-        self.y = tf.placeholder("float", shape=[None,None,None,channels], name='y')
+        self.x = tf.placeholder("float", shape=[None, None, None, channels], name='x')
+        self.y = tf.placeholder("float", shape=[None, None, None, channels], name='y')
         # weighted map would be a map of detected edges
-        self.w = tf.placeholder("float", shape=[None,None,None,1], name='w')
+        self.w = tf.placeholder("float", shape=[None, None, None, 1], name='w')
 
         logits, self.variables = create_network(self.x, channels, resolution, padding, **kwargs)
 
@@ -156,19 +163,20 @@ class upResNet(object):
 
         self.logits = logits
 
-        self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.logits, self.y), float32))
-        
+        with tf.name_scope("results"):
+            self.predicter = logits  # may change?
+            self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.logits, self.y), float32))
 
     def _get_cost(self, logits):
         with tf.name_scope("cost"):
-            flat_logits = tf.reshape(logits, [-1, channels]) # channels may not reach this scope
+            flat_logits = tf.reshape(logits, [-1, channels])  # channels may not reach this scope
             flat_labels = tf.reshape(self.y, [-1, channels])
-            flat_map = tf.reshape(self.w, [-1,1])
+            flat_map = tf.reshape(self.w, [-1, 1])
 
             """
             Current plan for loss function is a square of the pixelwise difference between X and Y
             """
-            loss_map = tf.math.square(tf.math.subtract(flat_logits,flat_labels))
+            loss_map = tf.math.square(tf.math.subtract(flat_logits, flat_labels))
             loss = tf.reduce_mean(tf.multiply(loss_map, flat_map))
 
             return loss
@@ -178,9 +186,22 @@ class upResNet(object):
         with tf.Session() as sess:
             lgts = sess.run(init)
             self.restore(sess, path)
-
+            y_dummy = np.empty((x_test.shape[0], y_test.shape[1]*resolution, y_test.shape[2]*resolution, channels))
+            w_dummy = np.empty((x_test.shape[0], x_test.shape[1]*resolution, x_test.shape[2]*resolution, channels))
+            prediction = sess.run(self.predicter, feed_dict={self.x: x_test, self.y:y_dummy, self.w: w_dummy})
+        return prediction
+    
+    def save(self, sess, path):
+        saver = tf.train.Saver()
+        save_path = saver.save(sess, path)
+        return save_path
+    
+    def restore(self, sess, path):
+        saver = tf.train.Saver()
+        saver.restore(sess, path)
+        logging.info("Model restored from file: %s" % model_path)
+        
 class Trainer(object):
-
     def __init__(self, net, batch_size=1, validation_batch_size=1, opt_kwargs={}):
         self.net = net
         self.batch_size = batch_size
@@ -236,7 +257,7 @@ class Trainer(object):
               output_path, total_validation_data, training_iters=10, epochs=100,
               dropout=0.75, display_step=1, include_map=True, restore=False,
               write_graph=False, prediction_path='prediction'):
-        
+
         save_path = os.path.join(output_path, "model.ckpt")
         if epochs == 0:
             return save_path
@@ -259,19 +280,47 @@ class Trainer(object):
                 training_accuracies = []
                 validation_accuracies = []
 
-
     def validate(self, sess, total_validation_data, validation_data_provider, include_map,
                  training_average_losses, training_accuracies, validation_average_losses,
                  validation_accuracies, name):
         total_validation_loss = 0
         total_validation_acc = 0
-        validation_iters = int(total_validation_data/self.validation_batch_size)
-        last_batch_size = total_validation_data - (validation_iters*self.validation_batch_size)
+        validation_iters = int(total_validation_data / self.validation_batch_size)
+        last_batch_size = total_validation_data - (validation_iters * self.validation_batch_size)
 
         for i in range(0, validation_iters):
             test_x, test_y, test_w = validation_data_provider(self.verification_batch_size)
             if not include_map:
                 test_w = np.ones
-            pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name, save_img=)
+            if i == validation_iters - 1 and last_batch_size == 0:
+                pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name, save_img=)
+            else:
+                pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w)
+            total_validation_loss += loss
+            total_validation_acc += accuracy
         test_x, test_y, test_w = validation_data_provider(last_batch_size)
+        validation_average_losses.append(total_validation_loss / total_validation_data)
+        validation_accuracies.append(total_validation_acc / total_validation_data)
+        pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
+                                                           training_losses=training_average_losses,
+                                                           training_accuracies=training_accuracies,
+                                                           validation_losses=validation_average_losses,
+                                                           validation_accuracies=validation_accuracies,
+                                                           save_img=1)
+        logging.info("Average validation loss= {:.4f}".format(total_validation_loss / total_validation_data))
+        return pred_shape, validation_average_losses, validation_accuracies
+
+    def store_prediction(self, sess, batch_x, batch_y, batch_w, name=None, training_losses=None,
+                         training_accuraceis=None, validation_losses=None,
+                         validation_accuracies=None, save_img=0):
+        prediction = sess.run(self.net.predicter, feed_dict={self.net.x: batch_x,
+                                                             self.net.y: batch_y,
+                                                             self.net.w: batch_w,
+                                                             self.net.keep_prob: 1})
+        self.prediction = prediction
+
+        # cropping necessary?
+
+        if save_img:
+            fig = plt.figure()
         
