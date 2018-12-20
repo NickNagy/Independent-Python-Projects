@@ -7,6 +7,7 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 import os
 
+# TODO: will need to crop y images appropriately 
 
 # layers & variable definitions
 def weight_variable(shape, stddev, name="weight"):
@@ -34,6 +35,22 @@ def deconv2d(x, W, midpoint, stride):
         return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID',
                                       name="conv2d_transpose")
 
+def get_image_summary(img, idx=0):
+    """
+    Code from jakeret unet implementation
+    """
+
+    V = tf.slice(img, (0, 0, 0, idx), (1, -1, -1, 1))
+    V -= tf.reduce_min(V)
+    V /= tf.reduce_max(V)
+    V *= 255
+
+    img_w = tf.shape(img)[1]
+    img_h = tf.shape(img)[2]
+    V = tf.reshape(V, tf.stack((img_w, img_h, 1)))
+    V = tf.transpose(V, (2, 0, 1))
+    V = tf.reshape(V, tf.stack((-1, img_w, img_h, 1)))
+    return V
 
 # no pooling layers
 def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, features_root=16, filter_size=3, deconv_size=2,
@@ -186,21 +203,22 @@ class upResNet(object):
         with tf.Session() as sess:
             lgts = sess.run(init)
             self.restore(sess, path)
-            y_dummy = np.empty((x_test.shape[0], y_test.shape[1]*resolution, y_test.shape[2]*resolution, channels))
-            w_dummy = np.empty((x_test.shape[0], x_test.shape[1]*resolution, x_test.shape[2]*resolution, channels))
-            prediction = sess.run(self.predicter, feed_dict={self.x: x_test, self.y:y_dummy, self.w: w_dummy})
+            y_dummy = np.empty((x_test.shape[0], y_test.shape[1] * resolution, y_test.shape[2] * resolution, channels))
+            w_dummy = np.empty((x_test.shape[0], x_test.shape[1] * resolution, x_test.shape[2] * resolution, channels))
+            prediction = sess.run(self.predicter, feed_dict={self.x: x_test, self.y: y_dummy, self.w: w_dummy})
         return prediction
-    
+
     def save(self, sess, path):
         saver = tf.train.Saver()
         save_path = saver.save(sess, path)
         return save_path
-    
+
     def restore(self, sess, path):
         saver = tf.train.Saver()
         saver.restore(sess, path)
         logging.info("Model restored from file: %s" % model_path)
-        
+
+
 class Trainer(object):
     def __init__(self, net, batch_size=1, validation_batch_size=1, opt_kwargs={}):
         self.net = net
@@ -279,7 +297,48 @@ class Trainer(object):
                 training_avg_losses = []
                 training_accuracies = []
                 validation_accuracies = []
-
+                
+                validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
+                                                                             validation_data_provider,
+                                                                             include_map, training_avg_losses,
+                                                                             training_accuracies, validation_avg_losses,
+                                                                             validation_accuracies, "_init")
+                
+                summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
+                loggin.info("Start optimization")
+                avg_gradients = None
+                
+                for epoch in range(epochs):
+                    total_loss = 0
+                    total_acc = 0
+                    for step in range((epoch*training_iters), ((epoch+1)*training_iters)):
+                        batch_x, batch_y, batch_w = training_data_provider(self.batch_size)
+                        if not include_map:
+                            batch_w = np.ones(batch_w.shape)
+                        _loss, lr, gradients = sess.run(
+                            (self.optimizer, self.net.cost, self.learning_rate_node, self.net.gradients_node),
+                            feed_dict = {self.net.x: batch_x,
+                                         self.net.y: batch_y,
+                                         self.net.w: batch_w,
+                                         self.net.keep_prob: dropout})
+                        if step % display_step == 0:
+                            acc = self.output_minibatch_stats(sess, summary_writer, step, batch_x, batch_y, batch_w)
+                        total_loss += loss
+                        total_acc += acc
+                    training_avg_losses.append(total_loss / training_iters)
+                    training_accuracies.append(total_acc / training_iters)
+                    self.output_epoch_stats(epoch, total_loss, training_iters, lr)
+                    validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data, 
+                                                                                 validation_data_provider, include_map,
+                                                                                 training_avg_losses, 
+                                                                                 training_accuracies,
+                                                                                 validation_avg_losses,
+                                                                                 validation_accuracies,
+                                                                                 name="epoch_%s" % epoch)
+                    save_path = self.net.save(sess, save_path)
+                logging.info("Optimization Finished")
+                return save_path
+                    
     def validate(self, sess, total_validation_data, validation_data_provider, include_map,
                  training_average_losses, training_accuracies, validation_average_losses,
                  validation_accuracies, name):
@@ -293,22 +352,22 @@ class Trainer(object):
             if not include_map:
                 test_w = np.ones
             if i == validation_iters - 1 and last_batch_size == 0:
-                pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name, save_img=)
+                loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name, save_img=1)
             else:
-                pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w)
+                loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w)
             total_validation_loss += loss
             total_validation_acc += accuracy
         test_x, test_y, test_w = validation_data_provider(last_batch_size)
         validation_average_losses.append(total_validation_loss / total_validation_data)
         validation_accuracies.append(total_validation_acc / total_validation_data)
-        pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
+        loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
                                                            training_losses=training_average_losses,
                                                            training_accuracies=training_accuracies,
                                                            validation_losses=validation_average_losses,
                                                            validation_accuracies=validation_accuracies,
                                                            save_img=1)
         logging.info("Average validation loss= {:.4f}".format(total_validation_loss / total_validation_data))
-        return pred_shape, validation_average_losses, validation_accuracies
+        return validation_average_losses, validation_accuracies
 
     def store_prediction(self, sess, batch_x, batch_y, batch_w, name=None, training_losses=None,
                          training_accuraceis=None, validation_losses=None,
@@ -319,8 +378,122 @@ class Trainer(object):
                                                              self.net.keep_prob: 1})
         self.prediction = prediction
 
+        loss, accuracy = sess.run((self.net.cost, self.net.accuracy), feed_dict={self.net.x: batch_x,
+                                                                                 self.net.y: batch_y,
+                                                                                 self.net.w: batch_w,
+                                                                                 self.net.keep_prob: 1})
+        
         # cropping necessary?
 
         if save_img:
+            plt.rcParams.update({'font.size': 8})
+            training_color = 'b'
+            validation_color = 'r'
+            moving_window_size = 25
             fig = plt.figure()
+            # define axes
+            grid_size = (2, 3)
+            ax_y_img = plt.subplot2grid(grid_size, (0, 0), rowspan=1, colspan=1)
+            ax_y_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+            ax_y_img.imshow(batch_y[0, ..., 0], aspect="auto")
+            ax_h_img = plt.subplot2grid(grid_size, (1, 0), rowspan=1, colspan=1)
+            ax_h_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+            ax_h_img.imshow(prediction[0, ..., 0], aspect="auto")
+            ax_loss = plt.subplot2grid(grid_size, (0, 1), rowspan=1, colspan=1)
+            ax_loss.set_title("Loss")
+            ax_acc = plt.subplot2grid(grid_size, (0, 2), rowspan=1, colspan=1)
+            ax_acc.set_title("Accuracy")
+            ax_loss_move = plt.subplot2grid(grid_size, (1, 1), rowspan=1, colspan=1)
+            ax_acc_move = plt.subplot2grid(grid_size, (1, 2), rowspan=1, colspan=1)
+
+            # plot whichever datasets are available
+            
+            if training_losses is not None:
+                length = len(training_losses)
+                x_axis = [i + 1 for i in range(length)]
+                ax_loss.plot(x_axis, training_losses, color=training_color, label='Training')
+                if length > 0:
+                    last_val = training_losses[length - 1]
+                    x = 0
+                    if length > moving_window_size:
+                        x = length - moving_window_size
+                        x_axis = [i + 1 + (length - moving_window_size) for i in range(moving_window_size)]
+                        ax_loss_move.plot(x_axis, training_losses[-moving_window_size:], color=training_color,
+                                          label='Training')
+                    else:
+                        ax_loss_move.plot(x_axis, training_losses, color=training_color, label='Training')
+                    ax_loss_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=training_color)
+                
+            if validation_losses is not None:
+                length = len(validation_losses)
+                x_axis = [i for i in range(length)]
+                ax_loss.plot(x_axis, validation_losses, color=validation_color, label='Validation')
+                if length > 0:
+                    last_val = validation_losses[length-1]
+                    x=length-1
+                    if length-1 > moving_window_size:
+                        x_axis = [i + (length-moving_window_size) for i in range(moving_window_size)]
+                        ax_loss_move.plot(x_axis, validation_losses[-moving_window_size:], color=validation_color, label='Validation')
+                    else:
+                        ax_loss_move.plot(x_axis, validation_losses, color=validation_color, label='Validation')
+                    ax_loss_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=validation_color)
+
+            if training_accuracies is not None:
+                length = len(training_accuracies)
+                x_axis = [i+1 for i in range(length)]
+                ax_acc.plot(x_axis, training_accuracies, color=training_color, label='Training')
+                if length > 0:
+                    last_val = training_accuracies[length-1]
+                    x=0
+                    if length > moving_window_size:
+                        x=length-moving_window_size
+                        x_axis = [i + 1 + (length - moving_window_size) for i in range(moving_window_size)]
+                        ax_acc_move.plot(x_axis, training_accuracies[-moving_window_size:], color=training_color, label='Training')
+                    else:
+                        ax_acc_move.plot(x_axis, training_accuracies, color=training_color, label='Training')
+                    ax_acc_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=training_color)
+
+            if validation_accuracies is not None:
+                length = len(validation_accuracies)
+                x_axis = [i for i in range(length)]
+                ax_acc.plot(x_axis, validation_accuracies, color=validation_color, label='Validation')
+                if length > 0:
+                    last_val = validation_accuracies[length - 1]
+                    x=length-1
+                    if length-1 > moving_window_size:
+                        x_axis = [i + (length - moving_window_size) for i in range(moving_window_size)]
+                        ax_acc_move.plot(x_axis, validation_accuracies[-moving_window_size:], color=validation_color,
+                                     label='Validation')
+                    else:
+                        ax_acc_move.plot(x_axis, validation_accuracies, color=validation_color, label='Validation')
+                    ax_acc_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=validation_color)
+            
+            plt.figlegend(loc='upper right')
+            plt.savefig("%s/%s.jpg" % (self.prediction_path, name))
+            
+        return loss, accuracy
+    
+    def output_epoch_stats(self, epoch, total_loss, training_iters, lr):
+        logging.info(
+            "Epoch {:}, Average loss: {:4f}, learning rate: {:.4f}".format(epoch, (total_loss/training_iters), lr))
+        
+    def output_minibatch_stats(self, sess, summary_writer, step, batch_x, batch_y, batch_w):
+        summary_str, loss, acc, predictions = sess.run([self.summary_op,
+                                                        self.net.cost,
+                                                        self.net.accuracy,
+                                                        self.net.predicter],
+                                                       feed_dict={self.net.x: batch_x,
+                                                                  self.net.y: batch_y,
+                                                                  self.net.w: batch_w,
+                                                                  self.net.keep_prob: 1})
+        summary_writer.add_summary(summary_str, step)
+        summary_writer.flush()
+        logging.info(
+            "Iter {:}, Minibatch Loss= {:.4f}, Training Accuracy= {:.4f}, Minibatch error= {:.1f}%".format(step,
+                                                                                                           loss,
+                                                                                                           acc,
+                                                                                                           error_rate(
+                                                                                                               predictions,
+                                                                                                               batch_y)))
+        return acc
         
