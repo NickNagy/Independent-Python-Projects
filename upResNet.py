@@ -2,6 +2,8 @@
 The format of this file is influenced by jakeret's implementation of Unet
 """
 
+from __future__ import print_function, division, absolute_import, unicode_literals
+
 import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
@@ -10,6 +12,8 @@ import os
 from image_util import ImageDataProvider as generator
 import shutil
 import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 # layers & variable definitions
 def weight_variable(shape, stddev, name="weight"):
@@ -28,12 +32,12 @@ def conv2d(x, W, b, keep_prob_):
 def deconv2d(x, W, midpoint, stride):
     with tf.name_scope("deconv2d"):
         x_shape = tf.shape(x)
-        if midpoint:
-            ratio = 1.5
-        else:
-            ratio = 1.3333
-        output_shape = tf.stack([x_shape[0], tf.to_int32(tf.to_float(x_shape[1]) * ratio),
-                                 tf.to_int32(tf.to_float(x_shape[2]) * ratio), x_shape[3] // 2])
+        # if midpoint:
+        #     ratio = 1.5
+        # else:
+        #     ratio = 1.3334
+        output_shape = tf.stack([x_shape[0], tf.to_int32(tf.to_float(x_shape[1]) * 2),
+                                 tf.to_int32(tf.to_float(x_shape[2]) * 2), x_shape[3]]) # // 2])
         return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID',
                                       name="conv2d_transpose")
 
@@ -69,7 +73,7 @@ def crop_to_shape(data, shape):
 
 # no pooling layers
 def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, channels=3, filter_size=3, deconv_size=2,
-                    summaries=True):
+                    layers_per_transpose = 2, summaries=True):
     """
     :param x: input tensor, shape [?,width,height,channels]
     :param keep_prob: dropout probability tensor
@@ -103,48 +107,63 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
     which_conv = 0
     which_up_conv = 0
     stddev = 0
-    features = channels
+    out_features = features_root
+    in_features = channels
     while size < resolution:
         # Convolutions...
         with tf.name_scope("Conv{}".format(str(which_conv))):
-
-            # TODO: decide on how many features I want @ each step
-            prev_step_features = features
-            features = features_root
-            stddev = np.sqrt(2 / (filter_size ** 2 * features))
-
-            w1 = weight_variable([filter_size, filter_size, prev_step_features, features], stddev, name="w1")
-            w2 = weight_variable([filter_size, filter_size, features, features], stddev, name="w2")
-
-            b1 = bias_variable([features], name="b1")
-            b2 = bias_variable([features], name="b2")
-
-            if padding:
-                in_node = tf.pad(in_node, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
-            conv1 = conv2d(in_node, w1, b1, keep_prob)
-            tmp_conv = tf.nn.relu(conv1)
-            convsDict[which_conv] = tmp_conv
-            which_conv += 1
-            if padding:
-                tmp_conv = tf.pad(tmp_conv, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
-            conv2 = conv2d(tmp_conv, w2, b2, keep_prob)
-            convsDict[which_conv] = tf.nn.relu(conv2)
-
-            weights.append((w1, w2))
-            biases.append((b1, b2))
-            convs.append((conv1, conv2))
+            stddev = np.sqrt(2 / (filter_size ** 2 * out_features))
+            for layer in range (0, layers_per_transpose):
+                out_features = features_root #size * 2 ** layer * features_root
+                if which_conv == 0:
+                    in_features = channels
+                else:
+                    in_features = out_features
+                w = weight_variable([filter_size, filter_size, in_features, out_features], stddev, name="w" + str(layer))
+                b = bias_variable([out_features], name="b" + str(layer))
+                if padding:
+                    in_node = tf.pad(in_node, paddings=[[0,0],[1,1],[1,1],[0,0]], mode='SYMMETRIC')
+                conv = conv2d(in_node, w, b, keep_prob)
+                convsDict[which_conv] = tf.nn.relu(conv)
+                weights.append(w)
+                biases.append(b)
+                convs.append(conv)
+                which_conv += 1
+            #
+            # w1 = weight_variable([filter_size, filter_size, prev_step_features, features], stddev, name="w1")
+            # w2 = weight_variable([filter_size, filter_size, features, features], stddev, name="w2")
+            #
+            # b1 = bias_variable([features], name="b1")
+            # b2 = bias_variable([features], name="b2")
+            #
+            # if padding:
+            #     in_node = tf.pad(in_node, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
+            # conv1 = conv2d(in_node, w1, b1, keep_prob)
+            # tmp_conv = tf.nn.relu(conv1)
+            # convsDict[which_conv] = tmp_conv
+            # which_conv += 1
+            # if padding:
+            #     tmp_conv = tf.pad(tmp_conv, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
+            # conv2 = conv2d(tmp_conv, w2, b2, keep_prob)
+            # convsDict[which_conv] = tf.nn.relu(conv2)
+            #
+            # weights.append((w1, w2))
+            # biases.append((b1, b2))
+            # convs.append((conv1, conv2))
 
         # Upscalings...
         with tf.name_scope("Up_Conv{}".format(which_up_conv)):
-            in_node = convsDict[which_conv]
-            midpoint = which_up_conv % 2 != 0
-            wd = weight_variable([deconv_size, deconv_size, features, features], stddev, name="wd")  # what is the size?
-            bd = bias_variable([features], name="bd")
+            stddev = np.sqrt(2 / (filter_size ** 2 * out_features))
+
+            in_node = convsDict[which_conv-1]
+            midpoint = which_up_conv % 2 == 0
+            wd = weight_variable([deconv_size, deconv_size, out_features, out_features], stddev, name="wd")
+            bd = bias_variable([out_features], name="bd")
             deconv = tf.nn.relu(deconv2d(in_node, wd, midpoint, deconv_size) + bd)
             deconvsDict[which_up_conv] = deconv
             in_node = deconv
             which_up_conv += 1
-            size += 0.5
+            size += 1
             #if midpoint:
             #    size *= 1.5
             #else:
@@ -160,26 +179,23 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
 
     if summaries:
         with tf.name_scope("summaries"):
-            for i, (c1, c2) in enumerate(convs):
-                tf.summary.image('summary_conv_%02d_01' % i, get_image_summary(c1))
-                tf.summary.image('summary_conv_%02d_02' % i, get_image_summary(c2))
+            for i, (c) in enumerate(convs):
+                tf.summary.image('summary_conv_%02d' % i, get_image_summary(c))
             tf.summary.image('summary_output', get_image_summary(convsDict["out"]))
             for k in deconvsDict.keys():
                 tf.summary.image('summary_deconv_%02d' % k, get_image_summary(deconvsDict[k]))
 
     variables = []
-    for w1, w2 in weights:
-        variables.append(w1)
-        variables.append(w2)
-    for b1, b2 in biases:
-        variables.append(b1)
-        variables.append(b2)
+    for w in weights:
+        variables.append(w)
+    for b in biases:
+        variables.append(b)
 
     return output, variables
 
 
 class upResNet(object):
-    def __init__(self, padding, channels=3, resolution=2, **kwargs):
+    def __init__(self, padding, channels=3, resolution=2, layers_per_transpose=2, **kwargs):
         tf.reset_default_graph()
 
         self.summaries = kwargs.get("summaries", True)
@@ -191,7 +207,7 @@ class upResNet(object):
         self.keep_prob = tf.placeholder(tf.float32, name="dropout_probability")
 
         logits, self.variables = create_network(self.x, keep_prob=0.75, channels=channels, resolution=resolution,
-                                                padding=padding, **kwargs)
+                                                padding=padding, layers_per_transpose=layers_per_transpose, **kwargs)
 
         self.cost = self._get_cost(logits)
 
@@ -294,7 +310,7 @@ class Trainer(object):
     def train(self, training_data_provider, validation_data_provider, restore_path,
               output_path, total_validation_data, training_iters=10, epochs=100,
               dropout=0.75, display_step=1, include_map=True, restore=False,
-              write_graph=False, prediction_path='prediction'):
+              write_graph=False, prediction_path=output_path + 'prediction'):
 
         save_path = os.path.join(output_path, "model.ckpt")
         if epochs == 0:
@@ -351,7 +367,7 @@ class Trainer(object):
                 training_avg_losses.append(total_loss / training_iters)
                 training_accuracies.append(total_acc / training_iters)
                 self.output_epoch_stats(epoch, total_loss, training_iters, lr)
-                validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
+                _, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
                                                                              validation_data_provider, include_map,
                                                                              training_avg_losses,
                                                                              training_accuracies,
@@ -375,20 +391,29 @@ class Trainer(object):
             if not include_map:
                 test_w = np.ones
             if i == validation_iters - 1 and last_batch_size == 0:
-                _, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name, save_img=1)
+                pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
+                                                                   training_losses=training_average_losses,
+                                                                   training_accuracies=training_accuracies,
+                                                                   validation_losses=validation_average_losses,
+                                                                   validation_accuracies=validation_accuracies,
+                                                                   save_img=1)
             else:
                 _, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w)
             total_validation_loss += loss
             total_validation_acc += accuracy
-        test_x, test_y, test_w = validation_data_provider(last_batch_size)
+
+        if last_batch_size != 0:
+            test_x, test_y, test_w = validation_data_provider(last_batch_size)
+            pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
+                                                               training_losses=training_average_losses,
+                                                               training_accuracies=training_accuracies,
+                                                               validation_losses=validation_average_losses,
+                                                               validation_accuracies=validation_accuracies,
+                                                               save_img=1)
+
         validation_average_losses.append(total_validation_loss / total_validation_data)
         validation_accuracies.append(total_validation_acc / total_validation_data)
-        pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
-                                                           training_losses=training_average_losses,
-                                                           training_accuracies=training_accuracies,
-                                                           validation_losses=validation_average_losses,
-                                                           validation_accuracies=validation_accuracies,
-                                                           save_img=1)
+
         logging.info("Average validation loss= {:.4f}".format(total_validation_loss / total_validation_data))
         return pred_shape, validation_average_losses, validation_accuracies
 
@@ -530,13 +555,14 @@ output_path = "C:\\Users\\Nick Nagy\\Desktop\\temp\\output"
 restore_path = output_path
 
 restore = False
-padding = False
+padding = True
 channels = 3
 resolution = 2
 batch_size = 1
 validation_batch_size = 1
-epochs = 10
-learning_rate = 0.001
+epochs = 100
+learning_rate = 0.1
+layers_per_transpose = 1
 
 training_generator = generator(search_path=training_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
                                weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
@@ -546,7 +572,7 @@ training_iters = int(training_generator._get_number_of_files() / batch_size) + \
                      (training_generator._get_number_of_files() % batch_size > 0)
 total_validation_data = validation_generator._get_number_of_files()
 
-net = upResNet(padding=padding, channels=channels, resolution=resolution)
+net = upResNet(padding=padding, channels=channels, resolution=resolution, layers_per_transpose=layers_per_transpose)
 
 opt_kwargs = dict(learning_rate=learning_rate)
 
