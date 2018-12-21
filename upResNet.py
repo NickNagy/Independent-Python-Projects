@@ -5,8 +5,11 @@ The format of this file is influenced by jakeret's implementation of Unet
 import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
+from collections import OrderedDict
 import os
 from image_util import ImageDataProvider as generator
+import shutil
+import logging
 
 # layers & variable definitions
 def weight_variable(shape, stddev, name="weight"):
@@ -29,7 +32,8 @@ def deconv2d(x, W, midpoint, stride):
             ratio = 1.5
         else:
             ratio = 1.3333
-        output_shape = tf.stack([x_shape[0], x_shape[1] * ratio, x_shape[2] * ratio, x_shape[3] // 2])
+        output_shape = tf.stack([x_shape[0], tf.to_int32(tf.to_float(x_shape[1]) * ratio),
+                                 tf.to_int32(tf.to_float(x_shape[2]) * ratio), x_shape[3] // 2])
         return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID',
                                       name="conv2d_transpose")
 
@@ -64,7 +68,7 @@ def crop_to_shape(data, shape):
 
 
 # no pooling layers
-def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, features_root=16, filter_size=3, deconv_size=2,
+def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, channels=3, filter_size=3, deconv_size=2,
                     summaries=True):
     """
     :param x: input tensor, shape [?,width,height,channels]
@@ -95,11 +99,12 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
     convsDict = OrderedDict()
     deconvsDict = OrderedDict()
 
-    size = width
+    size = 1
     which_conv = 0
     which_up_conv = 0
+    stddev = 0
     features = channels
-    while size < (width * resolution):
+    while size < resolution:
         # Convolutions...
         with tf.name_scope("Conv{}".format(str(which_conv))):
 
@@ -136,13 +141,14 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
             wd = weight_variable([deconv_size, deconv_size, features, features], stddev, name="wd")  # what is the size?
             bd = bias_variable([features], name="bd")
             deconv = tf.nn.relu(deconv2d(in_node, wd, midpoint, deconv_size) + bd)
-            deconvDict[which_up_conv] = deconv
+            deconvsDict[which_up_conv] = deconv
             in_node = deconv
             which_up_conv += 1
-            if midpoint:
-                size *= 1.5
-            else:
-                size *= 1.3333
+            size += 0.5
+            #if midpoint:
+            #    size *= 1.5
+            #else:
+            #    size *= 1.3333
 
     # output
     with tf.name_scope("output"):
@@ -157,14 +163,14 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
             for i, (c1, c2) in enumerate(convs):
                 tf.summary.image('summary_conv_%02d_01' % i, get_image_summary(c1))
                 tf.summary.image('summary_conv_%02d_02' % i, get_image_summary(c2))
-            tf.summary.image('summary_output', get_image_summary(convsDict("out")))
+            tf.summary.image('summary_output', get_image_summary(convsDict["out"]))
             for k in deconvsDict.keys():
                 tf.summary.image('summary_deconv_%02d' % k, get_image_summary(deconvsDict[k]))
 
     variables = []
     for w1, w2 in weights:
         variables.append(w1)
-        varialbes.append(w2)
+        variables.append(w2)
     for b1, b2 in biases:
         variables.append(b1)
         variables.append(b2)
@@ -173,7 +179,7 @@ def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, feature
 
 
 class upResNet(object):
-    def __init__(self, padding, channels=3, resolution=2):
+    def __init__(self, padding, channels=3, resolution=2, **kwargs):
         tf.reset_default_graph()
 
         self.summaries = kwargs.get("summaries", True)
@@ -183,7 +189,8 @@ class upResNet(object):
         # weighted map would be a map of detected edges
         self.w = tf.placeholder("float", shape=[None, None, None, 1], name='w')
 
-        logits, self.variables = create_network(self.x, channels, resolution, padding, **kwargs)
+        logits, self.variables = create_network(self.x, keep_prob=0.75, channels=channels, resolution=resolution,
+                                                padding=padding, **kwargs)
 
         self.cost = self._get_cost(logits)
 
@@ -193,7 +200,7 @@ class upResNet(object):
 
         with tf.name_scope("results"):
             self.predicter = logits  # may change?
-            self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.logits, self.y), float32))
+            self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.logits, self.y), tf.float32))
 
     def _get_cost(self, logits):
         with tf.name_scope("cost"):
@@ -204,7 +211,7 @@ class upResNet(object):
             """
             Current plan for loss function is a square of the pixelwise difference between X and Y
             """
-            loss_map = tf.math.square(tf.math.subtract(flat_logits, flat_labels))
+            loss_map = tf.math.squared_difference(flat_logits, flat_labels)
             loss = tf.reduce_mean(tf.multiply(loss_map, flat_map))
 
             return loss
@@ -214,7 +221,7 @@ class upResNet(object):
         with tf.Session() as sess:
             lgts = sess.run(init)
             self.restore(sess, path)
-            y_dummy = np.empty((x_test.shape[0], y_test.shape[1] * resolution, y_test.shape[2] * resolution, channels))
+            y_dummy = np.empty((x_test.shape[0], x_test.shape[1] * resolution, x_test.shape[2] * resolution, channels))
             w_dummy = np.empty((x_test.shape[0], x_test.shape[1] * resolution, x_test.shape[2] * resolution, channels))
             prediction = sess.run(self.predicter, feed_dict={self.x: x_test, self.y: y_dummy, self.w: w_dummy})
         return prediction
@@ -227,7 +234,7 @@ class upResNet(object):
     def restore(self, sess, path):
         saver = tf.train.Saver()
         saver.restore(sess, path)
-        logging.info("Model restored from file: %s" % model_path)
+        logging.info("Model restored from file: %s" % path)
 
 
 class Trainer(object):
@@ -235,8 +242,9 @@ class Trainer(object):
         self.net = net
         self.batch_size = batch_size
         self.validation_batch_size = validation_batch_size
+        self.opt_kwargs = opt_kwargs
 
-    def _get_optimizer(self, training_iters, global_step):
+    def _get_optimizer(self, global_step):
         learning_rate = self.opt_kwargs.pop("learning_rate", 0.001)
         self.learning_rate_node = tf.Variable(learning_rate, name="learning_rate")
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate_node, beta1=0.9,
@@ -244,23 +252,23 @@ class Trainer(object):
                                                                                      global_step=global_step)
         return optimizer
 
-    def _initialize(self, training_iters, output_path, restore, prediction_path):
+    def _initialize(self, output_path, restore, prediction_path):
         global_step = tf.Variable(0, name="global_step")
-        self.norm_gradients_node = tf.Variable(tf.constant(0.0, shape=[len(self.net.gradients_node)]),
-                                               name="norm_gradients")
-        if self.net.summaries and self.net.norm_grads:
-            tf.summary.histogram('norm_grads', self.norm_gradients_node)
+        # self.norm_gradients_node = tf.Variable(tf.constant(0.0, shape=[len(self.net.gradients_node)]),
+        #                                        name="norm_gradients")
+        # if self.net.summaries and self.net.norm_grads:
+        #     tf.summary.histogram('norm_grads', self.norm_gradients_node)
 
         tf.summary.scalar('loss', self.net.cost)
         tf.summary.scalar('accuracy', self.net.accuracy)
 
         tf.summary.image('prediction', get_image_summary(self.net.logits))
 
-        self.optimizer = self._get_optimizer(training_iters, global_step)
+        self.optimizer = self._get_optimizer(global_step)
         tf.summary.scalar('learning_rate', self.learning_rate_node)
 
         self.summary_op = tf.summary.merge_all()
-        init = self.global_variables_initializer()
+        init = tf.global_variables_initializer()
 
         self.prediction_path = prediction_path
         abs_prediction_path = os.path.abspath(self.prediction_path)
@@ -291,7 +299,7 @@ class Trainer(object):
         if epochs == 0:
             return save_path
 
-        init = self._initialize(training_iters, output_path, restore, prediction_path)
+        init = self._initialize(output_path, restore, prediction_path)
 
         with tf.Session() as sess:
             if write_graph:
@@ -318,7 +326,7 @@ class Trainer(object):
                                                                                          validation_accuracies, "_init")
 
                 summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
-                loggin.info("Start optimization")
+                logging.info("Start optimization")
 
                 for epoch in range(epochs):
                     total_loss = 0
@@ -384,7 +392,7 @@ class Trainer(object):
         return pred_shape, validation_average_losses, validation_accuracies
 
     def store_prediction(self, sess, batch_x, batch_y, batch_w, name=None, training_losses=None,
-                         training_accuraceis=None, validation_losses=None,
+                         training_accuracies=None, validation_losses=None,
                          validation_accuracies=None, save_img=0):
         prediction = sess.run(self.net.predicter, feed_dict={self.net.x: batch_x,
                                                              self.net.y: batch_y,
@@ -400,7 +408,7 @@ class Trainer(object):
                                                                                  self.net.y: y_cropped,
                                                                                  self.net.w: w_cropped,
                                                                                  self.net.keep_prob: 1})
-        logging.info("Validation error= {:.1f}%, loss= {:.4f}".format(error_rate(prediction, y_cropped), loss))
+        logging.info("Validation loss= {:.4f}".format(loss))
 
         # cropping necessary?
 
@@ -510,19 +518,14 @@ class Trainer(object):
         summary_writer.add_summary(summary_str, step)
         summary_writer.flush()
         logging.info(
-            "Iter {:}, Minibatch Loss= {:.4f}, Training Accuracy= {:.4f}, Minibatch error= {:.1f}%".format(step,
-                                                                                                           loss,
-                                                                                                           acc,
-                                                                                                           error_rate(
-                                                                                                               predictions,
-                                                                                                               batch_y)))
+            "Iter {:}, Minibatch Loss= {:.4f}, Training Accuracy= {:.4f}".format(step,loss, acc))
         return acc
 
 
-training_path = 'C:\\Users\\Nick Nagy\\Desktop\\temp\\training'
+training_path = "C:\\Users\\Nick Nagy\\Desktop\\temp\\training"
 validation_path = training_path  # 'C:\\Users\\Nick Nagy\\Desktop\\temp\\validation'
 
-output_path = 'C:\\Users\\Nick Nagy\\Desktop\\temp\\output'
+output_path = "C:\\Users\\Nick Nagy\\Desktop\\temp\\output"
 restore_path = output_path
 
 restore = False
@@ -532,18 +535,21 @@ resolution = 2
 batch_size = 1
 validation_batch_size = 1
 epochs = 10
+learning_rate = 0.001
 
-training_generator = generator(search_path=training_path, data_suffix='_x.npy', mask_suffix='_y.npy',
-                               shuffle_data=False, n_class=channels)
-validation_generator = generator(search_path=validation_path, data_suffix='_x.npy', mask_suffix='_y.npy',
-                                 shuffle_data=False, n_class=channels)
+training_generator = generator(search_path=training_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
+                               weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
+validation_generator = generator(search_path=validation_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
+                                 weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
 training_iters = int(training_generator._get_number_of_files() / batch_size) + \
                      (training_generator._get_number_of_files() % batch_size > 0)
 total_validation_data = validation_generator._get_number_of_files()
 
 net = upResNet(padding=padding, channels=channels, resolution=resolution)
-trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validation_batch_size)
 
+opt_kwargs = dict(learning_rate=learning_rate)
+
+trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validation_batch_size, opt_kwargs=opt_kwargs)
 trainer.train(training_data_provider=training_generator, validation_data_provider=validation_generator,
               restore_path=restore_path, output_path=output_path, total_validation_data=total_validation_data,
               training_iters=training_iters, epochs=epochs, restore=restore)
