@@ -7,7 +7,7 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 import os
 
-# TODO: will need to crop y images appropriately 
+# TODO: will need to crop y images appropriately
 
 # layers & variable definitions
 def weight_variable(shape, stddev, name="weight"):
@@ -51,6 +51,16 @@ def get_image_summary(img, idx=0):
     V = tf.transpose(V, (2, 0, 1))
     V = tf.reshape(V, tf.stack((-1, img_w, img_h, 1)))
     return V
+
+def crop_to_shape(data, shape):
+    """
+    Code from jakeret unet implementation
+    """
+    offset0 = (data.shape[1] - shape[1])//2
+    offset1 = (data.shape[2] - shape[2])//2
+    if offset0 == 0 or offset1 == 0:
+        return data
+    return data[:, offset0:(-offset0), offset1:(-offset1)]
 
 # no pooling layers
 def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, features_root=16, filter_size=3, deconv_size=2,
@@ -297,13 +307,13 @@ class Trainer(object):
                 training_avg_losses = []
                 training_accuracies = []
                 validation_accuracies = []
-                
-                validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
+
+                pred_shape, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
                                                                              validation_data_provider,
                                                                              include_map, training_avg_losses,
                                                                              training_accuracies, validation_avg_losses,
                                                                              validation_accuracies, "_init")
-                
+
                 summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
                 loggin.info("Start optimization")
                 avg_gradients = None
@@ -315,22 +325,24 @@ class Trainer(object):
                         batch_x, batch_y, batch_w = training_data_provider(self.batch_size)
                         if not include_map:
                             batch_w = np.ones(batch_w.shape)
-                        _loss, lr, gradients = sess.run(
+                        y_cropped = crop_to_shape(batch_y, pred_shape)
+                        w_cropped = crop_to_shape(batch_w, pred_shape)
+                        _, loss, lr, gradients = sess.run(
                             (self.optimizer, self.net.cost, self.learning_rate_node, self.net.gradients_node),
                             feed_dict = {self.net.x: batch_x,
-                                         self.net.y: batch_y,
-                                         self.net.w: batch_w,
+                                         self.net.y: y_cropped,
+                                         self.net.w: w_cropped,
                                          self.net.keep_prob: dropout})
                         if step % display_step == 0:
-                            acc = self.output_minibatch_stats(sess, summary_writer, step, batch_x, batch_y, batch_w)
+                            acc = self.output_minibatch_stats(sess, summary_writer, step, batch_x, y_cropped, w_cropped)
                         total_loss += loss
                         total_acc += acc
                     training_avg_losses.append(total_loss / training_iters)
                     training_accuracies.append(total_acc / training_iters)
                     self.output_epoch_stats(epoch, total_loss, training_iters, lr)
-                    validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data, 
+                    validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
                                                                                  validation_data_provider, include_map,
-                                                                                 training_avg_losses, 
+                                                                                 training_avg_losses,
                                                                                  training_accuracies,
                                                                                  validation_avg_losses,
                                                                                  validation_accuracies,
@@ -338,7 +350,7 @@ class Trainer(object):
                     save_path = self.net.save(sess, save_path)
                 logging.info("Optimization Finished")
                 return save_path
-                    
+
     def validate(self, sess, total_validation_data, validation_data_provider, include_map,
                  training_average_losses, training_accuracies, validation_average_losses,
                  validation_accuracies, name):
@@ -352,22 +364,22 @@ class Trainer(object):
             if not include_map:
                 test_w = np.ones
             if i == validation_iters - 1 and last_batch_size == 0:
-                loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name, save_img=1)
+                _, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name, save_img=1)
             else:
-                loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w)
+                _, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w)
             total_validation_loss += loss
             total_validation_acc += accuracy
         test_x, test_y, test_w = validation_data_provider(last_batch_size)
         validation_average_losses.append(total_validation_loss / total_validation_data)
         validation_accuracies.append(total_validation_acc / total_validation_data)
-        loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
+        pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
                                                            training_losses=training_average_losses,
                                                            training_accuracies=training_accuracies,
                                                            validation_losses=validation_average_losses,
                                                            validation_accuracies=validation_accuracies,
                                                            save_img=1)
         logging.info("Average validation loss= {:.4f}".format(total_validation_loss / total_validation_data))
-        return validation_average_losses, validation_accuracies
+        return pred_shape, validation_average_losses, validation_accuracies
 
     def store_prediction(self, sess, batch_x, batch_y, batch_w, name=None, training_losses=None,
                          training_accuraceis=None, validation_losses=None,
@@ -377,12 +389,17 @@ class Trainer(object):
                                                              self.net.w: batch_w,
                                                              self.net.keep_prob: 1})
         self.prediction = prediction
-
-        loss, accuracy = sess.run((self.net.cost, self.net.accuracy), feed_dict={self.net.x: batch_x,
-                                                                                 self.net.y: batch_y,
-                                                                                 self.net.w: batch_w,
-                                                                                 self.net.keep_prob: 1})
         
+        pred_shape = prediction.shape
+        y_cropped = crop_to_shape(batch_y, pred_shape)
+        w_cropped = crop_to_shape(batch_w, pred_shape)
+        
+        loss, accuracy = sess.run((self.net.cost, self.net.accuracy), feed_dict={self.net.x: batch_x,
+                                                                                 self.net.y: y_cropped,
+                                                                                 self.net.w: w_cropped,
+                                                                                 self.net.keep_prob: 1})
+        logging.info("Validation error= {:.1f}%, loss= {:.4f}".format(error_rate(prediction, y_cropped), loss))
+
         # cropping necessary?
 
         if save_img:
@@ -407,7 +424,7 @@ class Trainer(object):
             ax_acc_move = plt.subplot2grid(grid_size, (1, 2), rowspan=1, colspan=1)
 
             # plot whichever datasets are available
-            
+
             if training_losses is not None:
                 length = len(training_losses)
                 x_axis = [i + 1 for i in range(length)]
@@ -423,7 +440,7 @@ class Trainer(object):
                     else:
                         ax_loss_move.plot(x_axis, training_losses, color=training_color, label='Training')
                     ax_loss_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=training_color)
-                
+
             if validation_losses is not None:
                 length = len(validation_losses)
                 x_axis = [i for i in range(length)]
@@ -467,16 +484,16 @@ class Trainer(object):
                     else:
                         ax_acc_move.plot(x_axis, validation_accuracies, color=validation_color, label='Validation')
                     ax_acc_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=validation_color)
-            
+
             plt.figlegend(loc='upper right')
             plt.savefig("%s/%s.jpg" % (self.prediction_path, name))
-            
-        return loss, accuracy
-    
+
+        return pred_shape, loss, accuracy
+
     def output_epoch_stats(self, epoch, total_loss, training_iters, lr):
         logging.info(
             "Epoch {:}, Average loss: {:4f}, learning rate: {:.4f}".format(epoch, (total_loss/training_iters), lr))
-        
+
     def output_minibatch_stats(self, sess, summary_writer, step, batch_x, batch_y, batch_w):
         summary_str, loss, acc, predictions = sess.run([self.summary_op,
                                                         self.net.cost,
@@ -496,4 +513,3 @@ class Trainer(object):
                                                                                                                predictions,
                                                                                                                batch_y)))
         return acc
-        
