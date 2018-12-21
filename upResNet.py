@@ -125,6 +125,7 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
                     in_node = tf.pad(in_node, paddings=[[0,0],[1,1],[1,1],[0,0]], mode='SYMMETRIC')
                 conv = conv2d(in_node, w, b, keep_prob)
                 convsDict[which_conv] = tf.nn.relu(conv)
+                in_node = convsDict[which_conv]
                 weights.append(w)
                 biases.append(b)
                 convs.append(conv)
@@ -154,8 +155,6 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
         # Upscalings...
         with tf.name_scope("Up_Conv{}".format(which_up_conv)):
             stddev = np.sqrt(2 / (filter_size ** 2 * out_features))
-
-            in_node = convsDict[which_conv-1]
             midpoint = which_up_conv % 2 == 0
             wd = weight_variable([deconv_size, deconv_size, out_features, out_features], stddev, name="wd")
             bd = bias_variable([out_features], name="bd")
@@ -556,10 +555,10 @@ class Trainer(object):
         return acc
 
 
-training_path = "C:\\Users\\Nick Nagy\\Desktop\\temp\\training"
+training_path = "D:\\upResNet\\temp\\training"
 validation_path = training_path  # 'C:\\Users\\Nick Nagy\\Desktop\\temp\\validation'
 
-output_path = "C:\\Users\\Nick Nagy\\Desktop\\temp\\output"
+output_path = "D:\\upResNet\\temp\\output"
 restore_path = output_path
 
 restore = False
@@ -569,8 +568,8 @@ resolution = 2
 batch_size = 1
 validation_batch_size = 1
 epochs = 100
-learning_rate = 0.1
-layers_per_transpose = 1
+learning_rate = 0.01
+layers_per_transpose = 2
 
 training_generator = generator(search_path=training_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
                                weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
