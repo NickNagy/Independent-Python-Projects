@@ -188,6 +188,7 @@ class upResNet(object):
         self.y = tf.placeholder("float", shape=[None, None, None, channels], name='y')
         # weighted map would be a map of detected edges
         self.w = tf.placeholder("float", shape=[None, None, None, 1], name='w')
+        self.keep_prob = tf.placeholder(tf.float32, name="dropout_probability")
 
         logits, self.variables = create_network(self.x, keep_prob=0.75, channels=channels, resolution=resolution,
                                                 padding=padding, **kwargs)
@@ -305,61 +306,61 @@ class Trainer(object):
             if write_graph:
                 tf.train.write_graph(sess.graph_def, output_path, "graph.pb", False)
 
-                sess.run(init)
+            sess.run(init)
 
-                if restore:
-                    ckpt = tf.train.get_checkpoint_state(restore_path)
-                    if ckpt and ckpt.model_checkpoint_path:
-                        self.net.resotre(sess, ckpt.model_checkpoint_path)
+            if restore:
+                ckpt = tf.train.get_checkpoint_state(restore_path)
+                if ckpt and ckpt.model_checkpoint_path:
+                    self.net.resotre(sess, ckpt.model_checkpoint_path)
 
-                validation_avg_losses = []
-                training_avg_losses = []
-                training_accuracies = []
-                validation_accuracies = []
+            validation_avg_losses = []
+            training_avg_losses = []
+            training_accuracies = []
+            validation_accuracies = []
 
-                pred_shape, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
-                                                                                         validation_data_provider,
-                                                                                         include_map,
-                                                                                         training_avg_losses,
-                                                                                         training_accuracies,
-                                                                                         validation_avg_losses,
-                                                                                         validation_accuracies, "_init")
+            pred_shape, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
+                                                                                    validation_data_provider,
+                                                                                    include_map,
+                                                                                    training_avg_losses,
+                                                                                    training_accuracies,
+                                                                                    validation_avg_losses,
+                                                                                    validation_accuracies, "_init")
 
-                summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
-                logging.info("Start optimization")
+            summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
+            logging.info("Start optimization")
 
-                for epoch in range(epochs):
-                    total_loss = 0
-                    total_acc = 0
-                    for step in range((epoch * training_iters), ((epoch + 1) * training_iters)):
-                        batch_x, batch_y, batch_w = training_data_provider(self.batch_size)
-                        if not include_map:
-                            batch_w = np.ones(batch_w.shape)
-                        y_cropped = crop_to_shape(batch_y, pred_shape)
-                        w_cropped = crop_to_shape(batch_w, pred_shape)
-                        _, loss, lr, gradients = sess.run(
-                            (self.optimizer, self.net.cost, self.learning_rate_node, self.net.gradients_node),
-                            feed_dict={self.net.x: batch_x,
-                                       self.net.y: y_cropped,
-                                       self.net.w: w_cropped,
-                                       self.net.keep_prob: dropout})
-                        if step % display_step == 0:
-                            acc = self.output_minibatch_stats(sess, summary_writer, step, batch_x, y_cropped, w_cropped)
-                        total_loss += loss
-                        total_acc += acc
-                    training_avg_losses.append(total_loss / training_iters)
-                    training_accuracies.append(total_acc / training_iters)
-                    self.output_epoch_stats(epoch, total_loss, training_iters, lr)
-                    validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
-                                                                                 validation_data_provider, include_map,
-                                                                                 training_avg_losses,
-                                                                                 training_accuracies,
-                                                                                 validation_avg_losses,
-                                                                                 validation_accuracies,
-                                                                                 name="epoch_%s" % epoch)
-                    save_path = self.net.save(sess, save_path)
-                logging.info("Optimization Finished")
-                return save_path
+            for epoch in range(epochs):
+                total_loss = 0
+                total_acc = 0
+                for step in range((epoch * training_iters), ((epoch + 1) * training_iters)):
+                    batch_x, batch_y, batch_w = training_data_provider(self.batch_size)
+                    if not include_map:
+                        batch_w = np.ones(batch_w.shape)
+                    y_cropped = crop_to_shape(batch_y, pred_shape)
+                    w_cropped = crop_to_shape(batch_w, pred_shape)
+                    _, loss, lr, gradients = sess.run(
+                        (self.optimizer, self.net.cost, self.learning_rate_node, self.net.gradients_node),
+                        feed_dict={self.net.x: batch_x,
+                                   self.net.y: y_cropped,
+                                   self.net.w: w_cropped,
+                                   self.net.keep_prob: dropout})
+                    if step % display_step == 0:
+                        acc = self.output_minibatch_stats(sess, summary_writer, step, batch_x, y_cropped, w_cropped)
+                    total_loss += loss
+                    total_acc += acc
+                training_avg_losses.append(total_loss / training_iters)
+                training_accuracies.append(total_acc / training_iters)
+                self.output_epoch_stats(epoch, total_loss, training_iters, lr)
+                validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
+                                                                             validation_data_provider, include_map,
+                                                                             training_avg_losses,
+                                                                             training_accuracies,
+                                                                             validation_avg_losses,
+                                                                             validation_accuracies,
+                                                                             name="epoch_%s" % epoch)
+                save_path = self.net.save(sess, save_path)
+            logging.info("Optimization Finished")
+            return save_path
 
     def validate(self, sess, total_validation_data, validation_data_provider, include_map,
                  training_average_losses, training_accuracies, validation_average_losses,
@@ -370,7 +371,7 @@ class Trainer(object):
         last_batch_size = total_validation_data - (validation_iters * self.validation_batch_size)
 
         for i in range(0, validation_iters):
-            test_x, test_y, test_w = validation_data_provider(self.verification_batch_size)
+            test_x, test_y, test_w = validation_data_provider(self.validation_batch_size)
             if not include_map:
                 test_w = np.ones
             if i == validation_iters - 1 and last_batch_size == 0:
