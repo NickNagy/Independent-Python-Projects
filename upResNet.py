@@ -6,8 +6,7 @@ import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 import os
-
-# TODO: will need to crop y images appropriately
+from image_util import ImageDataProvider as generator
 
 # layers & variable definitions
 def weight_variable(shape, stddev, name="weight"):
@@ -22,7 +21,6 @@ def conv2d(x, W, b, keep_prob_):
     with tf.name_scope("conv2d"):
         return tf.nn.dropout(tf.nn.bias_add(tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='VALID'), b), keep_prob_)
 
-
 # TODO: I want a pattern of upscaling like so: (200x200,300x300,400x400,600x600,800x800,1200x1200,1600x1600...)
 def deconv2d(x, W, midpoint, stride):
     with tf.name_scope("deconv2d"):
@@ -34,6 +32,7 @@ def deconv2d(x, W, midpoint, stride):
         output_shape = tf.stack([x_shape[0], x_shape[1] * ratio, x_shape[2] * ratio, x_shape[3] // 2])
         return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID',
                                       name="conv2d_transpose")
+
 
 def get_image_summary(img, idx=0):
     """
@@ -52,15 +51,17 @@ def get_image_summary(img, idx=0):
     V = tf.reshape(V, tf.stack((-1, img_w, img_h, 1)))
     return V
 
+
 def crop_to_shape(data, shape):
     """
     Code from jakeret unet implementation
     """
-    offset0 = (data.shape[1] - shape[1])//2
-    offset1 = (data.shape[2] - shape[2])//2
+    offset0 = (data.shape[1] - shape[1]) // 2
+    offset1 = (data.shape[2] - shape[2]) // 2
     if offset0 == 0 or offset1 == 0:
         return data
     return data[:, offset0:(-offset0), offset1:(-offset1)]
+
 
 # no pooling layers
 def create_newtwork(x, keep_prob, channels, padding=False, resolution=3, features_root=16, filter_size=3, deconv_size=2,
@@ -309,19 +310,20 @@ class Trainer(object):
                 validation_accuracies = []
 
                 pred_shape, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
-                                                                             validation_data_provider,
-                                                                             include_map, training_avg_losses,
-                                                                             training_accuracies, validation_avg_losses,
-                                                                             validation_accuracies, "_init")
+                                                                                         validation_data_provider,
+                                                                                         include_map,
+                                                                                         training_avg_losses,
+                                                                                         training_accuracies,
+                                                                                         validation_avg_losses,
+                                                                                         validation_accuracies, "_init")
 
                 summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
                 loggin.info("Start optimization")
-                avg_gradients = None
-                
+
                 for epoch in range(epochs):
                     total_loss = 0
                     total_acc = 0
-                    for step in range((epoch*training_iters), ((epoch+1)*training_iters)):
+                    for step in range((epoch * training_iters), ((epoch + 1) * training_iters)):
                         batch_x, batch_y, batch_w = training_data_provider(self.batch_size)
                         if not include_map:
                             batch_w = np.ones(batch_w.shape)
@@ -329,10 +331,10 @@ class Trainer(object):
                         w_cropped = crop_to_shape(batch_w, pred_shape)
                         _, loss, lr, gradients = sess.run(
                             (self.optimizer, self.net.cost, self.learning_rate_node, self.net.gradients_node),
-                            feed_dict = {self.net.x: batch_x,
-                                         self.net.y: y_cropped,
-                                         self.net.w: w_cropped,
-                                         self.net.keep_prob: dropout})
+                            feed_dict={self.net.x: batch_x,
+                                       self.net.y: y_cropped,
+                                       self.net.w: w_cropped,
+                                       self.net.keep_prob: dropout})
                         if step % display_step == 0:
                             acc = self.output_minibatch_stats(sess, summary_writer, step, batch_x, y_cropped, w_cropped)
                         total_loss += loss
@@ -389,11 +391,11 @@ class Trainer(object):
                                                              self.net.w: batch_w,
                                                              self.net.keep_prob: 1})
         self.prediction = prediction
-        
+
         pred_shape = prediction.shape
         y_cropped = crop_to_shape(batch_y, pred_shape)
         w_cropped = crop_to_shape(batch_w, pred_shape)
-        
+
         loss, accuracy = sess.run((self.net.cost, self.net.accuracy), feed_dict={self.net.x: batch_x,
                                                                                  self.net.y: y_cropped,
                                                                                  self.net.w: w_cropped,
@@ -446,26 +448,28 @@ class Trainer(object):
                 x_axis = [i for i in range(length)]
                 ax_loss.plot(x_axis, validation_losses, color=validation_color, label='Validation')
                 if length > 0:
-                    last_val = validation_losses[length-1]
-                    x=length-1
-                    if length-1 > moving_window_size:
-                        x_axis = [i + (length-moving_window_size) for i in range(moving_window_size)]
-                        ax_loss_move.plot(x_axis, validation_losses[-moving_window_size:], color=validation_color, label='Validation')
+                    last_val = validation_losses[length - 1]
+                    x = length - 1
+                    if length - 1 > moving_window_size:
+                        x_axis = [i + (length - moving_window_size) for i in range(moving_window_size)]
+                        ax_loss_move.plot(x_axis, validation_losses[-moving_window_size:], color=validation_color,
+                                          label='Validation')
                     else:
                         ax_loss_move.plot(x_axis, validation_losses, color=validation_color, label='Validation')
                     ax_loss_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=validation_color)
 
             if training_accuracies is not None:
                 length = len(training_accuracies)
-                x_axis = [i+1 for i in range(length)]
+                x_axis = [i + 1 for i in range(length)]
                 ax_acc.plot(x_axis, training_accuracies, color=training_color, label='Training')
                 if length > 0:
-                    last_val = training_accuracies[length-1]
-                    x=0
+                    last_val = training_accuracies[length - 1]
+                    x = 0
                     if length > moving_window_size:
-                        x=length-moving_window_size
+                        x = length - moving_window_size
                         x_axis = [i + 1 + (length - moving_window_size) for i in range(moving_window_size)]
-                        ax_acc_move.plot(x_axis, training_accuracies[-moving_window_size:], color=training_color, label='Training')
+                        ax_acc_move.plot(x_axis, training_accuracies[-moving_window_size:], color=training_color,
+                                         label='Training')
                     else:
                         ax_acc_move.plot(x_axis, training_accuracies, color=training_color, label='Training')
                     ax_acc_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=training_color)
@@ -476,11 +480,11 @@ class Trainer(object):
                 ax_acc.plot(x_axis, validation_accuracies, color=validation_color, label='Validation')
                 if length > 0:
                     last_val = validation_accuracies[length - 1]
-                    x=length-1
-                    if length-1 > moving_window_size:
+                    x = length - 1
+                    if length - 1 > moving_window_size:
                         x_axis = [i + (length - moving_window_size) for i in range(moving_window_size)]
                         ax_acc_move.plot(x_axis, validation_accuracies[-moving_window_size:], color=validation_color,
-                                     label='Validation')
+                                         label='Validation')
                     else:
                         ax_acc_move.plot(x_axis, validation_accuracies, color=validation_color, label='Validation')
                     ax_acc_move.text(x=x, y=last_val, s="{0:.2f}".format(last_val), color=validation_color)
@@ -492,7 +496,7 @@ class Trainer(object):
 
     def output_epoch_stats(self, epoch, total_loss, training_iters, lr):
         logging.info(
-            "Epoch {:}, Average loss: {:4f}, learning rate: {:.4f}".format(epoch, (total_loss/training_iters), lr))
+            "Epoch {:}, Average loss: {:4f}, learning rate: {:.4f}".format(epoch, (total_loss / training_iters), lr))
 
     def output_minibatch_stats(self, sess, summary_writer, step, batch_x, batch_y, batch_w):
         summary_str, loss, acc, predictions = sess.run([self.summary_op,
@@ -513,3 +517,33 @@ class Trainer(object):
                                                                                                                predictions,
                                                                                                                batch_y)))
         return acc
+
+
+training_path = 'C:\\Users\\Nick Nagy\\Desktop\\temp\\training'
+validation_path = training_path  # 'C:\\Users\\Nick Nagy\\Desktop\\temp\\validation'
+
+output_path = 'C:\\Users\\Nick Nagy\\Desktop\\temp\\output'
+restore_path = output_path
+
+restore = False
+padding = False
+channels = 3
+resolution = 2
+batch_size = 1
+validation_batch_size = 1
+epochs = 10
+
+training_generator = generator(search_path=training_path, data_suffix='_x.npy', mask_suffix='_y.npy',
+                               shuffle_data=False, n_class=channels)
+validation_generator = generator(search_path=validation_path, data_suffix='_x.npy', mask_suffix='_y.npy',
+                                 shuffle_data=False, n_class=channels)
+training_iters = int(training_generator._get_number_of_files() / batch_size) + \
+                     (training_generator._get_number_of_files() % batch_size > 0)
+total_validation_data = validation_generator._get_number_of_files()
+
+net = upResNet(padding=padding, channels=channels, resolution=resolution)
+trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validation_batch_size)
+
+trainer.train(training_data_provider=training_generator, validation_data_provider=validation_generator,
+              restore_path=restore_path, output_path=output_path, total_validation_data=total_validation_data,
+              training_iters=training_iters, epochs=epochs, restore=restore)
