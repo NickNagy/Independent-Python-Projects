@@ -310,7 +310,7 @@ class Trainer(object):
     def train(self, training_data_provider, validation_data_provider, restore_path,
               output_path, total_validation_data, training_iters=10, epochs=100,
               dropout=0.75, display_step=1, include_map=True, restore=False,
-              write_graph=False, prediction_path=output_path + 'prediction'):
+              write_graph=False, prediction_path='prediction'):
 
         save_path = os.path.join(output_path, "model.ckpt")
         if epochs == 0:
@@ -427,6 +427,8 @@ class Trainer(object):
         self.prediction = prediction
 
         pred_shape = prediction.shape
+        print("Prediction shape: " + str(pred_shape))
+        print("Batch x shape: " + str(batch_x.shape))
         y_cropped = crop_to_shape(batch_y, pred_shape)
         w_cropped = crop_to_shape(batch_w, pred_shape)
 
@@ -437,6 +439,9 @@ class Trainer(object):
         logging.info("Validation loss= {:.4f}".format(loss))
 
         # cropping necessary?
+        from scipy.misc import imresize
+        import skimage
+        x_resize = skimage.transform.resize(batch_x[0], (pred_shape[1],pred_shape[2]))
 
         if save_img:
             plt.rcParams.update({'font.size': 8})
@@ -445,13 +450,16 @@ class Trainer(object):
             moving_window_size = 25
             fig = plt.figure()
             # define axes
-            grid_size = (2, 3)
+            grid_size = (3, 3)
             ax_y_img = plt.subplot2grid(grid_size, (0, 0), rowspan=1, colspan=1)
             ax_y_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_y_img.imshow(batch_y[0, ..., 0], aspect="auto")
-            ax_h_img = plt.subplot2grid(grid_size, (1, 0), rowspan=1, colspan=1)
+            ax_y_img.imshow(batch_y[0,...,0], aspect="auto")
+            ax_x_img = plt.subplot2grid(grid_size, (1, 0), rowspan=1, colspan=1)
+            ax_x_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+            ax_x_img.imshow(x_resize[:,:,0], aspect="auto")
+            ax_h_img = plt.subplot2grid(grid_size, (2, 0), rowspan=1, colspan=1)
             ax_h_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_h_img.imshow(prediction[0, ..., 0], aspect="auto")
+            ax_h_img.imshow(prediction[0,...,0], aspect="auto")
             ax_loss = plt.subplot2grid(grid_size, (0, 1), rowspan=1, colspan=1)
             ax_loss.set_title("Loss")
             ax_acc = plt.subplot2grid(grid_size, (0, 2), rowspan=1, colspan=1)
@@ -579,4 +587,4 @@ opt_kwargs = dict(learning_rate=learning_rate)
 trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validation_batch_size, opt_kwargs=opt_kwargs)
 trainer.train(training_data_provider=training_generator, validation_data_provider=validation_generator,
               restore_path=restore_path, output_path=output_path, total_validation_data=total_validation_data,
-              training_iters=training_iters, epochs=epochs, restore=restore)
+              training_iters=training_iters, epochs=epochs, restore=restore, prediction_path=output_path+'\\prediction')
