@@ -11,6 +11,7 @@ from collections import OrderedDict
 import os
 from image_util import ImageDataProvider as generator
 import shutil
+from skimage.transform import resize
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -216,7 +217,7 @@ class upResNet(object):
 
         with tf.name_scope("results"):
             self.predicter = logits  # may change?
-            self.accuracy = tf.reduce_mean(tf.cast(tf.equal(self.logits, self.y), tf.float32))
+            self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.to_int32(self.logits), tf.to_int32(self.y)), tf.float32))
 
     def _get_cost(self, logits):
         with tf.name_scope("cost"):
@@ -306,14 +307,26 @@ class Trainer(object):
 
         return init
 
-    def train(self, training_data_provider, validation_data_provider, restore_path,
+    def train(self, training_data_provider, validation_data_provider, testing_data_provider, restore_path,
               output_path, total_validation_data, training_iters=10, epochs=100,
               dropout=0.75, display_step=1, include_map=True, restore=False,
-              write_graph=False, prediction_path='prediction'):
+              write_graph=False, test_after=False, prediction_path='prediction'):
 
         save_path = os.path.join(output_path, "model.ckpt")
         if epochs == 0:
             return save_path
+
+        epoch_offset = 0
+        try:
+            epoch_file = open(output_path + "\\last_epoch.txt", "r")
+            if restore:
+                try:
+                    epoch_offset = int(epoch_file.readline())
+                except(ValueError):
+                    epoch_offset = 0
+            epoch_file.close()
+        except(FileNotFoundError):
+            print("Note: last_epoch.txt was not found. Assumed starting @ epoch 0")
 
         init = self._initialize(output_path, restore, prediction_path)
 
@@ -326,7 +339,7 @@ class Trainer(object):
             if restore:
                 ckpt = tf.train.get_checkpoint_state(restore_path)
                 if ckpt and ckpt.model_checkpoint_path:
-                    self.net.resotre(sess, ckpt.model_checkpoint_path)
+                    self.net.restore(sess, ckpt.model_checkpoint_path)
 
             validation_avg_losses = []
             training_avg_losses = []
@@ -365,16 +378,37 @@ class Trainer(object):
                     total_acc += acc
                 training_avg_losses.append(total_loss / training_iters)
                 training_accuracies.append(total_acc / training_iters)
-                self.output_epoch_stats(epoch, total_loss, training_iters, lr)
+                true_epoch = epoch + epoch_offset
+                self.output_epoch_stats(true_epoch, total_loss, training_iters, lr)
                 _, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
                                                                              validation_data_provider, include_map,
                                                                              training_avg_losses,
                                                                              training_accuracies,
                                                                              validation_avg_losses,
                                                                              validation_accuracies,
-                                                                             name="epoch_%s" % epoch)
+                                                                             name="epoch_%s" % true_epoch)
+                epoch_file = open(output_path + "\\last_epoch.txt", "w")
+                epoch_file.write(str(true_epoch + 1))
+                epoch_file.close()
                 save_path = self.net.save(sess, save_path)
             logging.info("Optimization Finished")
+
+            if test_after:
+                for i in range(0, testing_data_provider._get_number_of_files()):
+                    print(str(i))
+                    test_x, test_y, test_w = training_data_provider(1)
+                    fig,ax = plt.subplots(1,3,sharex=True,sharey=True)
+                    ax[0].imshow(test_y[0].astype('uint8'), aspect="auto")
+                    ax[0].set_title("Truth")
+                    ax[1].imshow(resize(test_x[0].astype('uint8'), (pred_shape[1],pred_shape[2])), aspect="auto")
+                    ax[1].set_title("skimage.transform.resize")
+                    prediction = sess.run(self.net.predicter, feed_dict={self.net.x: test_x,
+                                                                         self.net.y: test_y,
+                                                                         self.net.w: test_w,
+                                                                         self.net.keep_prob: 1})
+                    ax[2].imshow(prediction[0].astype('uint8'), aspect="auto")
+                    ax[2].set_title("Prediction")
+                    plt.savefig("%s/%s.jpg" % (self.prediction_path, i))
             return save_path
 
     def validate(self, sess, total_validation_data, validation_data_provider, include_map,
@@ -426,8 +460,6 @@ class Trainer(object):
         self.prediction = prediction
 
         pred_shape = prediction.shape
-        print("Prediction shape: " + str(pred_shape))
-        print("Batch x shape: " + str(batch_x.shape))
         y_cropped = crop_to_shape(batch_y, pred_shape)
         w_cropped = crop_to_shape(batch_w, pred_shape)
 
@@ -436,11 +468,21 @@ class Trainer(object):
                                                                                  self.net.w: w_cropped,
                                                                                  self.net.keep_prob: 1})
         logging.info("Validation loss= {:.4f}".format(loss))
+        x_resize = resize(batch_x[0], (pred_shape[1],pred_shape[2]))
 
-        # cropping necessary?
-        from scipy.misc import imresize
-        import skimage
-        x_resize = skimage.transform.resize(batch_x[0], (pred_shape[1],pred_shape[2]))
+        # for logic checking purposes
+        debug=False
+        if debug:
+            fig, ax = plt.subplots(2, 4, sharex=False, sharey=False)
+            ax[0,0].imshow(batch_y[0], aspect="auto")
+            ax[1,0].imshow(batch_y[0].astype('uint8'), aspect="auto")
+            ax[0,1].imshow(batch_x[0], aspect="auto")
+            ax[1,1].imshow(batch_x[0].astype('uint8'), aspect="auto")
+            ax[0,2].imshow(x_resize, aspect="auto")
+            ax[1,2].imshow(x_resize.astype('uint8'), aspect="auto")
+            ax[0,3].imshow(prediction[0], aspect="auto")
+            ax[1,3].imshow(prediction[0].astype('uint8'), aspect="auto")
+            plt.show()
 
         if save_img:
             plt.rcParams.update({'font.size': 8})
@@ -452,13 +494,13 @@ class Trainer(object):
             grid_size = (3, 3)
             ax_y_img = plt.subplot2grid(grid_size, (0, 0), rowspan=1, colspan=1)
             ax_y_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_y_img.imshow(batch_y[0,...,0], aspect="auto")
+            ax_y_img.imshow(batch_y[0].astype('uint8'), aspect="auto")
             ax_x_img = plt.subplot2grid(grid_size, (1, 0), rowspan=1, colspan=1)
             ax_x_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_x_img.imshow(x_resize[:,:,0], aspect="auto")
+            ax_x_img.imshow(x_resize.astype('uint8'), aspect="auto")
             ax_h_img = plt.subplot2grid(grid_size, (2, 0), rowspan=1, colspan=1)
             ax_h_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_h_img.imshow(prediction[0,...,0], aspect="auto")
+            ax_h_img.imshow(prediction[0].astype('uint8'), aspect="auto")
             ax_loss = plt.subplot2grid(grid_size, (0, 1), rowspan=1, colspan=1)
             ax_loss.set_title("Loss")
             ax_acc = plt.subplot2grid(grid_size, (0, 2), rowspan=1, colspan=1)
@@ -555,26 +597,31 @@ class Trainer(object):
         return acc
 
 
-training_path = "D:\\upResNet\\temp\\training"
-validation_path = training_path  # 'C:\\Users\\Nick Nagy\\Desktop\\temp\\validation'
+training_path = 'D:\\upResNet\\temp\\training'
+validation_path = 'D:\\upResNet\\temp\\training'
+testing_path = 'D:\\upResNet\\temp\\training'
 
 output_path = "D:\\upResNet\\temp\\output"
 restore_path = output_path
 
-restore = False
+restore = True
 padding = True
+test_after = True
 channels = 3
 resolution = 2
-batch_size = 1
-validation_batch_size = 1
-epochs = 100
+batch_size = 20
+validation_batch_size = 20
+epochs = 1000
 learning_rate = 0.01
-layers_per_transpose = 2
+layers_per_transpose = 3
 
 training_generator = generator(search_path=training_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
                                weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
 validation_generator = generator(search_path=validation_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
                                  weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
+testing_generator = generator(search_path=testing_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
+                              weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
+
 training_iters = int(training_generator._get_number_of_files() / batch_size) + \
                      (training_generator._get_number_of_files() % batch_size > 0)
 total_validation_data = validation_generator._get_number_of_files()
@@ -585,5 +632,6 @@ opt_kwargs = dict(learning_rate=learning_rate)
 
 trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validation_batch_size, opt_kwargs=opt_kwargs)
 trainer.train(training_data_provider=training_generator, validation_data_provider=validation_generator,
-              restore_path=restore_path, output_path=output_path, total_validation_data=total_validation_data,
-              training_iters=training_iters, epochs=epochs, restore=restore, prediction_path=output_path+'\\prediction')
+              testing_data_provider=testing_generator, restore_path=restore_path, output_path=output_path,
+              total_validation_data=total_validation_data, training_iters=training_iters, epochs=epochs,
+              restore=restore, test_after=test_after, prediction_path=output_path+'\\prediction')
