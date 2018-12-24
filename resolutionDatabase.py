@@ -71,23 +71,26 @@ def generate_weights(folder, counter):
         titles.append("Original")
         if sobel:
             img_sobel = edgeDetector.sobel_detection(img)
+            img_sobel = np.add(img_sobel, np.ones(shape=img_sobel.shape)) #+1 to every pixel, so no multiply by 0
             img_sobel_name = file[0:-6] + "_sobel"
             images.append(img_sobel)
             titles.append(img_sobel_name)
         if laplace:
             img_laplace = edgeDetector.laplace_detection(img)
+            img_laplace = np.add(img_laplace, np.ones(shape=img_laplace.shape))
             img_laplace_name = file[0:-6] + "_laplace"
             images.append(img_laplace)
             titles.append(img_laplace_name)
         if canny:
             img_canny = edgeDetector.canny_detection(img, 0)
+            img_canny = np.add(img_canny, np.ones(shape=img_canny.shape))
             img_canny_name = file[0:-6] + "_canny"
             images.append(img_canny)
             titles.append(img_canny_name)
         if debug:
             display_multiple(columns=len(images), images=images, titles=titles)
         else:
-            for i in range(1, len(images)):
+            for i in range(1, len(images)): #offset by 1 b/c first index is original y, redundant to save
                 np.save(titles[i], images[i])
         counter-=1
 
