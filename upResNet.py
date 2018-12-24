@@ -312,7 +312,6 @@ class Trainer(object):
                 try:
                     # TODO: better way?
                     training_avg_losses = [float(i) for i in training_file.readline()[1:-2].split(', ')]
-                    print(str(training_avg_losses))
                     training_accuracies = [float(i) for i in training_file.readline()[1:-1].split(', ')]
                     validation_avg_losses = [float(i) for i in validation_file.readline()[1:-2].split(', ')]
                     validation_accuracies = [float(i) for i in validation_file.readline()[1:-1].split(', ')]
@@ -414,6 +413,7 @@ class Trainer(object):
         total_validation_loss = 0
         total_validation_acc = 0
         validation_iters = int(total_validation_data / self.validation_batch_size)
+        #print("Validation iters: " + str(validation_iters))
         last_batch_size = total_validation_data - (validation_iters * self.validation_batch_size)
 
         for i in range(0, validation_iters):
@@ -440,11 +440,13 @@ class Trainer(object):
                                                                validation_losses=validation_average_losses,
                                                                validation_accuracies=validation_accuracies,
                                                                save_img=1)
+            total_validation_loss += loss
+            total_validation_acc += accuracy
+            validation_iters += 1
+        validation_average_losses.append(total_validation_loss / validation_iters)
+        validation_accuracies.append(total_validation_acc / validation_iters)
 
-        validation_average_losses.append(total_validation_loss / total_validation_data)
-        validation_accuracies.append(total_validation_acc / total_validation_data)
-
-        logging.info("Average validation loss= {:.4f}".format(total_validation_loss / total_validation_data))
+        logging.info("Average validation loss= {:.4f}".format(total_validation_loss / validation_iters))
         return pred_shape, validation_average_losses, validation_accuracies
 
     def store_prediction(self, sess, batch_x, batch_y, batch_w, name=None, training_losses=None,
@@ -464,7 +466,7 @@ class Trainer(object):
                                                                                  self.net.y: y_cropped,
                                                                                  self.net.w: w_cropped,
                                                                                  self.net.keep_prob: 1})
-        logging.info("Validation loss= {:.4f}".format(loss))
+        logging.info("Validation loss= {:.4f}, Validation accuracy= {:.4f}".format(loss, accuracy))
         x_resize = resize(batch_x[0], (pred_shape[1],pred_shape[2]))
 
         # for logic checking purposes
