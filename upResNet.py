@@ -29,14 +29,9 @@ def conv2d(x, W, b, keep_prob_):
     with tf.name_scope("conv2d"):
         return tf.nn.dropout(tf.nn.bias_add(tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='VALID'), b), keep_prob_)
 
-# TODO: I want a pattern of upscaling like so: (200x200,300x300,400x400,600x600,800x800,1200x1200,1600x1600...)
 def deconv2d(x, W, midpoint, stride):
     with tf.name_scope("deconv2d"):
         x_shape = tf.shape(x)
-        # if midpoint:
-        #     ratio = 1.5
-        # else:
-        #     ratio = 1.3334
         output_shape = tf.stack([x_shape[0], tf.to_int32(tf.to_float(x_shape[1]) * 2),
                                  tf.to_int32(tf.to_float(x_shape[2]) * 2), x_shape[3]]) # // 2])
         return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID',
@@ -131,27 +126,6 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
                 biases.append(b)
                 convs.append(conv)
                 which_conv += 1
-            #
-            # w1 = weight_variable([filter_size, filter_size, prev_step_features, features], stddev, name="w1")
-            # w2 = weight_variable([filter_size, filter_size, features, features], stddev, name="w2")
-            #
-            # b1 = bias_variable([features], name="b1")
-            # b2 = bias_variable([features], name="b2")
-            #
-            # if padding:
-            #     in_node = tf.pad(in_node, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
-            # conv1 = conv2d(in_node, w1, b1, keep_prob)
-            # tmp_conv = tf.nn.relu(conv1)
-            # convsDict[which_conv] = tmp_conv
-            # which_conv += 1
-            # if padding:
-            #     tmp_conv = tf.pad(tmp_conv, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
-            # conv2 = conv2d(tmp_conv, w2, b2, keep_prob)
-            # convsDict[which_conv] = tf.nn.relu(conv2)
-            #
-            # weights.append((w1, w2))
-            # biases.append((b1, b2))
-            # convs.append((conv1, conv2))
 
         # Upscalings...
         with tf.name_scope("Up_Conv{}".format(which_up_conv)):
@@ -164,10 +138,6 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
             in_node = deconv
             which_up_conv += 1
             size += 1
-            #if midpoint:
-            #    size *= 1.5
-            #else:
-            #    size *= 1.3333
 
     # output
     with tf.name_scope("output"):
