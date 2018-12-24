@@ -6,40 +6,47 @@ from scipy.ndimage.filters import convolve
 from skimage.filters import threshold_mean
 from math import atan
 
+#TODO: clean up
+
 Gx_filter = np.array([[1,0,-1],[2,0,-2],[1,0,-1]])
 Gy_filter = np.array([[1,2,1],[0,0,0],[-1,-2,-1]])
 laplace_filter = np.array([[0,-1,0],[-1,4,-1],[0,-1,0]])
 laplace_filter_diag = np.array([[-1,-1,-1],[-1,8,-1],[-1,-1,-1]])
 
-filename = 'D:\\upResNet\\temp\\training\\test.jpg'
+filename = 'C:\\Users\\Nick Nagy\\Desktop\\Cute-Beagle-Dog-Pictures-1024x768.jpg'#'D:\\upResNet\\temp\\training\\test.jpg'
 
 threshold = 225
 
-plt.gray()
-img = Image.open(filename).convert('L')
-img_gauss = gaussian_filter(img, sigma=1.4)
-
-imgx = convolve(img_gauss, Gx_filter)
-imgy = convolve(img_gauss, Gy_filter)
-imgL = convolve(img_gauss, laplace_filter)
-imgLd = convolve(img_gauss, laplace_filter_diag)
-imgxy = np.add(imgx, imgy)
+# plt.gray()
+# img = Image.open(filename).convert('L')
+# img_gauss = gaussian_filter(img, sigma=1.4)
+#
+# imgx = convolve(img_gauss, Gx_filter)
+# imgy = convolve(img_gauss, Gy_filter)
+# imgL = convolve(img_gauss, laplace_filter)
+# imgLd = convolve(img_gauss, laplace_filter_diag)
+# imgxy = np.add(imgx, imgy)
 
 def get_threshold(img):
     return img > threshold #threshold_mean(img)
 
-def get_grad_angle(Gx, Gy):
-    return atan(Gx,Gy)
+def sobel_detection(img):
+    img_gauss = gaussian_filter(img, sigma=1.4)
+    return np.add(convolve(img_gauss, Gx_filter), convolve(img_gauss, Gy_filter))
 
-def single_convolution():
-    return 0
+def laplace_detection(img, diagonals=False):
+    img_gauss = gaussian_filter(img, sigma=1.4)
+    if diagonals:
+        return convolve(img_gauss, laplace_filter_diag)
+    return convolve(img_gauss, laplace_filter)
 
-def canny_detection(gxy, thetaM, threshold):
-    """
-    :param gxy: input matrix, = |Gx| + |Gy|
-    :param thetaM: input matrix, = arctan(Gy/Gx)
-    :param threshold: threshold for edge definition
-    """
+def canny_detection(img, threshold):
+    # sobel
+    img_gauss = gaussian_filter(img, sigma=1.4)
+    gx = convolve(img_gauss, Gx_filter)
+    gy = convolve(img_gauss, Gy_filter)
+    gxy = np.add(gx, gy)
+    thetaM = np.arctan2(gy, gx)
     result = np.ndarray(shape=np.shape(img))
     #TODO: fix edge problem
     for i in range(0, gxy.shape[0]-3):
@@ -74,19 +81,16 @@ def canny_detection(gxy, thetaM, threshold):
                     result[i+1][j+1] = 1
                 else:
                     result[i+1][j+1] = 0
-    # @ each point, check orientation of gradient and magnitude
-    # determine if gradient is a maximum
     return result
 
-imgx_thresh = get_threshold(imgx)
-imgy_thresh = get_threshold(imgy)
-imgL_thresh = get_threshold(imgL)
-imgLd_thresh = get_threshold(imgLd)
-imgxy_thresh = get_threshold(imgxy)
+# imgx_thresh = get_threshold(imgx)
+# imgy_thresh = get_threshold(imgy)
+# imgL_thresh = get_threshold(imgL)
+# imgLd_thresh = get_threshold(imgLd)
+# imgxy_thresh = get_threshold(imgxy)
 
-theta_matrix = np.arctan2(imgy,imgx)
-img_canny = canny_detection(imgxy, theta_matrix, 0)
-img_canny_thresh = canny_detection(imgxy, theta_matrix, threshold)
+#img_canny = canny_detection(img, 0)
+#img_canny_thresh = canny_detection(img, threshold)
 
 def display_all():
     fig,ax = plt.subplots(2,6,sharex=True,sharey=True)
@@ -109,5 +113,3 @@ def display_all():
     ax[0,5].set_title("Canny")
     ax[1,5].imshow(img_canny_thresh, aspect="auto")
     plt.show()
-
-display_all()
