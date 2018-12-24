@@ -330,6 +330,29 @@ class Trainer(object):
 
         init = self._initialize(output_path, restore, prediction_path)
 
+        validation_avg_losses = []
+        training_avg_losses = []
+        training_accuracies = []
+        validation_accuracies = []
+
+        try:
+            training_file = open(output_path + "\\training_data.txt", "r")
+            validation_file = open(output_path + "\\validation_data.txt", "r")
+            if restore:
+                try:
+                    # TODO: better way?
+                    training_avg_losses = [float(i) for i in training_file.readline()[1:-2].split(', ')]
+                    print(str(training_avg_losses))
+                    training_accuracies = [float(i) for i in training_file.readline()[1:-1].split(', ')]
+                    validation_avg_losses = [float(i) for i in validation_file.readline()[1:-2].split(', ')]
+                    validation_accuracies = [float(i) for i in validation_file.readline()[1:-1].split(', ')]
+                except(ValueError):
+                    print("No prior training or validation data exists. Assuming new model")
+            training_file.close()
+            validation_file.close()
+        except(FileNotFoundError):
+            print("No prior training or validation data exists. Assuming new model")
+
         with tf.Session() as sess:
             if write_graph:
                 tf.train.write_graph(sess.graph_def, output_path, "graph.pb", False)
@@ -340,11 +363,6 @@ class Trainer(object):
                 ckpt = tf.train.get_checkpoint_state(restore_path)
                 if ckpt and ckpt.model_checkpoint_path:
                     self.net.restore(sess, ckpt.model_checkpoint_path)
-
-            validation_avg_losses = []
-            training_avg_losses = []
-            training_accuracies = []
-            validation_accuracies = []
 
             pred_shape, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
                                                                                     validation_data_provider,
@@ -390,6 +408,15 @@ class Trainer(object):
                 epoch_file = open(output_path + "\\last_epoch.txt", "w")
                 epoch_file.write(str(true_epoch + 1))
                 epoch_file.close()
+                # TODO: find more efficient way
+                training_file = open(output_path + "\\training_data.txt", "w")
+                training_file.write(str(training_avg_losses) + "\n")
+                training_file.write(str(training_accuracies))
+                training_file.close()
+                validation_file = open(output_path + "\\validation_data.txt", "w")
+                validation_file.write(str(validation_avg_losses) + "\n")
+                validation_file.write(str(validation_accuracies))
+                validation_file.close()
                 save_path = self.net.save(sess, save_path)
             logging.info("Optimization Finished")
 
@@ -601,7 +628,7 @@ training_path = 'D:\\upResNet\\temp\\training'
 validation_path = 'D:\\upResNet\\temp\\training'
 testing_path = 'D:\\upResNet\\temp\\training'
 
-output_path = "D:\\upResNet\\temp\\output"
+output_path = "D:\\upResNet\\temp\\output_eva"
 restore_path = output_path
 
 restore = True
@@ -611,7 +638,7 @@ channels = 3
 resolution = 2
 batch_size = 20
 validation_batch_size = 20
-epochs = 1000
+epochs = 500
 learning_rate = 0.01
 layers_per_transpose = 3
 
