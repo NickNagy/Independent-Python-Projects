@@ -87,7 +87,7 @@ def generate_weights(folder, counter):
         if debug:
             display_multiple(columns=len(images), images=images, titles=titles)
         else:
-            for i in range(0, len(images)):
+            for i in range(1, len(images)):
                 np.save(titles[i], images[i])
         counter-=1
 
