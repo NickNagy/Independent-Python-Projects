@@ -13,8 +13,10 @@ from image_util import ImageDataProvider as generator
 import shutil
 from skimage.transform import resize
 import logging
+from PIL import Image
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+
 
 # layers & variable definitions
 def weight_variable(shape, stddev, name="weight"):
@@ -29,11 +31,12 @@ def conv2d(x, W, b, keep_prob_):
     with tf.name_scope("conv2d"):
         return tf.nn.dropout(tf.nn.bias_add(tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='VALID'), b), keep_prob_)
 
+
 def deconv2d(x, W, midpoint, stride):
     with tf.name_scope("deconv2d"):
         x_shape = tf.shape(x)
         output_shape = tf.stack([x_shape[0], tf.to_int32(tf.to_float(x_shape[1]) * 2),
-                                 tf.to_int32(tf.to_float(x_shape[2]) * 2), x_shape[3]]) # // 2])
+                                 tf.to_int32(tf.to_float(x_shape[2]) * 2), x_shape[3]])  # // 2])
         return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID',
                                       name="conv2d_transpose")
 
@@ -68,8 +71,9 @@ def crop_to_shape(data, shape):
 
 
 # no pooling layers
-def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, channels=3, filter_size=3, deconv_size=2,
-                    layers_per_transpose = 2, summaries=True):
+def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, channels=3, filter_size=3,
+                   deconv_size=2,
+                   layers_per_transpose=2, summaries=True):
     """
     :param x: input tensor, shape [?,width,height,channels]
     :param keep_prob: dropout probability tensor
@@ -108,17 +112,19 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
     while size < resolution:
         # Convolutions...
         with tf.name_scope("Conv{}".format(str(which_conv))):
-            stddev = np.sqrt(2 / (filter_size ** 2 * out_features))
-            for layer in range (0, layers_per_transpose):
-                out_features = features_root #size * 2 ** layer * features_root
+            for layer in range(0, layers_per_transpose):
                 if which_conv == 0:
                     in_features = channels
+                    out_features = features_root
                 else:
                     in_features = out_features
-                w = weight_variable([filter_size, filter_size, in_features, out_features], stddev, name="w" + str(layer))
+                    out_features *= 2
+                stddev = np.sqrt(2 / (filter_size ** 2 * out_features))
+                w = weight_variable([filter_size, filter_size, in_features, out_features], stddev,
+                                    name="w" + str(layer))
                 b = bias_variable([out_features], name="b" + str(layer))
                 if padding:
-                    in_node = tf.pad(in_node, paddings=[[0,0],[1,1],[1,1],[0,0]], mode='SYMMETRIC')
+                    in_node = tf.pad(in_node, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
                 conv = conv2d(in_node, w, b, keep_prob)
                 convsDict[which_conv] = tf.nn.relu(conv)
                 in_node = convsDict[which_conv]
@@ -131,7 +137,11 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
         with tf.name_scope("Up_Conv{}".format(which_up_conv)):
             stddev = np.sqrt(2 / (filter_size ** 2 * out_features))
             midpoint = which_up_conv % 2 == 0
-            wd = weight_variable([deconv_size, deconv_size, out_features, out_features], stddev, name="wd")
+            if layers_per_transpose == 0:
+                in_features = channels
+            else:
+                in_features = out_features
+            wd = weight_variable([deconv_size, deconv_size, in_features, out_features], stddev, name="wd")
             bd = bias_variable([out_features], name="bd")
             deconv = tf.nn.relu(deconv2d(in_node, wd, midpoint, deconv_size) + bd)
             deconvsDict[which_up_conv] = deconv
@@ -141,7 +151,7 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
 
     # output
     with tf.name_scope("output"):
-        weight = weight_variable([1, 1, features_root, channels], stddev)
+        weight = weight_variable([1, 1, out_features, channels], stddev)
         bias = bias_variable([channels], name="bias")
         conv = conv2d(in_node, weight, bias, tf.constant(1.0))
         output = tf.nn.relu(conv)
@@ -180,6 +190,7 @@ class upResNet(object):
                                                 padding=padding, layers_per_transpose=layers_per_transpose, **kwargs)
 
         self.cost = self._get_cost(logits)
+        self.channels = channels
 
         self.gradients_node = tf.gradients(self.cost, self.variables)
 
@@ -209,7 +220,7 @@ class upResNet(object):
             lgts = sess.run(init)
             self.restore(sess, path)
             y_dummy = np.empty((x_test.shape[0], x_test.shape[1] * resolution, x_test.shape[2] * resolution, channels))
-            w_dummy = np.empty((x_test.shape[0], x_test.shape[1] * resolution, x_test.shape[2] * resolution, channels))
+            w_dummy = np.empty((x_test.shape[0], x_test.shape[1] * resolution, x_test.shape[2] * resolution, 1))
             prediction = sess.run(self.predicter, feed_dict={self.x: x_test, self.y: y_dummy, self.w: w_dummy})
         return prediction
 
@@ -334,12 +345,12 @@ class Trainer(object):
                     self.net.restore(sess, ckpt.model_checkpoint_path)
 
             pred_shape, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
-                                                                                    validation_data_provider,
-                                                                                    include_map,
-                                                                                    training_avg_losses,
-                                                                                    training_accuracies,
-                                                                                    validation_avg_losses,
-                                                                                    validation_accuracies, "_init")
+                                                                                     validation_data_provider,
+                                                                                     include_map,
+                                                                                     training_avg_losses,
+                                                                                     training_accuracies,
+                                                                                     validation_avg_losses,
+                                                                                     validation_accuracies, "_init")
 
             summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
             logging.info("Start optimization")
@@ -368,12 +379,12 @@ class Trainer(object):
                 true_epoch = epoch + epoch_offset
                 self.output_epoch_stats(true_epoch, total_loss, training_iters, lr)
                 _, validation_avg_losses, validation_accuracies = self.validate(sess, total_validation_data,
-                                                                             validation_data_provider, include_map,
-                                                                             training_avg_losses,
-                                                                             training_accuracies,
-                                                                             validation_avg_losses,
-                                                                             validation_accuracies,
-                                                                             name="epoch_%s" % true_epoch)
+                                                                                validation_data_provider, include_map,
+                                                                                training_avg_losses,
+                                                                                training_accuracies,
+                                                                                validation_avg_losses,
+                                                                                validation_accuracies,
+                                                                                name="epoch_%s" % true_epoch)
                 epoch_file = open(output_path + "\\last_epoch.txt", "w")
                 epoch_file.write(str(true_epoch + 1))
                 epoch_file.close()
@@ -393,10 +404,10 @@ class Trainer(object):
                 for i in range(0, testing_data_provider._get_number_of_files()):
                     print(str(i))
                     test_x, test_y, test_w = training_data_provider(1)
-                    fig,ax = plt.subplots(1,3,sharex=True,sharey=True)
+                    fig, ax = plt.subplots(1, 3, sharex=True, sharey=True)
                     ax[0].imshow(test_y[0].astype('uint8'), aspect="auto")
                     ax[0].set_title("Truth")
-                    ax[1].imshow(resize(test_x[0].astype('uint8'), (pred_shape[1],pred_shape[2])), aspect="auto")
+                    ax[1].imshow(resize(test_x[0].astype('uint8'), (pred_shape[1], pred_shape[2])), aspect="auto")
                     ax[1].set_title("skimage.transform.resize")
                     prediction = sess.run(self.net.predicter, feed_dict={self.net.x: test_x,
                                                                          self.net.y: test_y,
@@ -413,7 +424,7 @@ class Trainer(object):
         total_validation_loss = 0
         total_validation_acc = 0
         validation_iters = int(total_validation_data / self.validation_batch_size)
-        #print("Validation iters: " + str(validation_iters))
+        # print("Validation iters: " + str(validation_iters))
         last_batch_size = total_validation_data - (validation_iters * self.validation_batch_size)
 
         for i in range(0, validation_iters):
@@ -466,22 +477,22 @@ class Trainer(object):
                                                                                  self.net.y: y_cropped,
                                                                                  self.net.w: w_cropped,
                                                                                  self.net.keep_prob: 1})
-        logging.info("Validation loss= {:.4f}, Validation accuracy= {:.4f}".format(loss, accuracy))
-        x_resize = resize(batch_x[0], (pred_shape[1],pred_shape[2]))
 
-        # for logic checking purposes
-        debug=False
-        if debug:
-            fig, ax = plt.subplots(2, 4, sharex=False, sharey=False)
-            ax[0,0].imshow(batch_y[0], aspect="auto")
-            ax[1,0].imshow(batch_y[0].astype('uint8'), aspect="auto")
-            ax[0,1].imshow(batch_x[0], aspect="auto")
-            ax[1,1].imshow(batch_x[0].astype('uint8'), aspect="auto")
-            ax[0,2].imshow(x_resize, aspect="auto")
-            ax[1,2].imshow(x_resize.astype('uint8'), aspect="auto")
-            ax[0,3].imshow(prediction[0], aspect="auto")
-            ax[1,3].imshow(prediction[0].astype('uint8'), aspect="auto")
-            plt.show()
+        x_resize = resize(batch_x[0], (pred_shape[1], pred_shape[2]))
+        logging.info("Validation loss= {:.4f}, Validation accuracy= {:.4f}".format(loss, accuracy))
+        x_resize_acc = np.mean(np.equal(x_resize.astype(np.int32), y_cropped[0].astype(np.int32))).astype(np.float32)
+        logging.info("Resize accuracy= {:.4f}".format(x_resize_acc))
+
+        # TODO: way to not make these checks @ every prediction store
+        if self.net.channels == 3:
+            y_disp = y_cropped[0]
+            x_disp = x_resize
+            pred_disp = prediction[0]
+        else:
+            plt.gray()
+            y_disp = y_cropped[0,...,0]
+            x_disp = x_resize[:,...,0]
+            pred_disp = prediction[0,...,0]
 
         if save_img:
             plt.rcParams.update({'font.size': 8})
@@ -493,13 +504,13 @@ class Trainer(object):
             grid_size = (3, 3)
             ax_y_img = plt.subplot2grid(grid_size, (0, 0), rowspan=1, colspan=1)
             ax_y_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_y_img.imshow(batch_y[0].astype('uint8'), aspect="auto")
+            ax_y_img.imshow(y_disp.astype('uint8'), aspect="auto")
             ax_x_img = plt.subplot2grid(grid_size, (1, 0), rowspan=1, colspan=1)
             ax_x_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_x_img.imshow(x_resize.astype('uint8'), aspect="auto")
+            ax_x_img.imshow(x_disp.astype('uint8'), aspect="auto")
             ax_h_img = plt.subplot2grid(grid_size, (2, 0), rowspan=1, colspan=1)
             ax_h_img.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            ax_h_img.imshow(prediction[0].astype('uint8'), aspect="auto")
+            ax_h_img.imshow(pred_disp.astype('uint8'), aspect="auto")
             ax_loss = plt.subplot2grid(grid_size, (0, 1), rowspan=1, colspan=1)
             ax_loss.set_title("Loss")
             ax_acc = plt.subplot2grid(grid_size, (0, 2), rowspan=1, colspan=1)
@@ -573,6 +584,7 @@ class Trainer(object):
 
             plt.figlegend(loc='upper right')
             plt.savefig("%s/%s.jpg" % (self.prediction_path, name))
+            plt.close()
 
         return pred_shape, loss, accuracy
 
@@ -592,40 +604,56 @@ class Trainer(object):
         summary_writer.add_summary(summary_str, step)
         summary_writer.flush()
         logging.info(
-            "Iter {:}, Minibatch Loss= {:.4f}, Training Accuracy= {:.4f}".format(step,loss, acc))
+            "Iter {:}, Minibatch Loss= {:.4f}, Training Accuracy= {:.4f}".format(step, loss, acc))
         return acc
 
 
-training_path = 'D:\\upResNet\\temp\\training'
-validation_path = 'D:\\upResNet\\temp\\training'
-testing_path = 'D:\\upResNet\\temp\\training'
-
-output_path = "D:\\upResNet\\temp\\output_eva"
-restore_path = output_path
+training_path = 'D:\\upResNet\\256x256\\training'
+validation_path = training_path
+testing_path = training_path
 
 restore = True
 padding = True
-test_after = True
-channels = 3
+test_after = False
+channels = 1
 resolution = 2
-batch_size = 20
-validation_batch_size = 20
-epochs = 500
-learning_rate = 0.01
+batch_size = 8
+validation_batch_size = batch_size
+epochs = 239
+learning_rate = 0.001
 layers_per_transpose = 3
+features_root = 64
 
-training_generator = generator(search_path=training_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
-                               weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
-validation_generator = generator(search_path=validation_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
-                                 weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
-testing_generator = generator(search_path=testing_path + "/*npy", data_suffix="_x.npy", mask_suffix="_y.npy",
-                              weight_suffix="_w.npy", shuffle_data=False, n_class=channels)
+weight_type = "_sobel"
+weight_suffix = weight_type + ".npy"
+
+summary_str = str(resolution) + "res_" + str(layers_per_transpose) + "layers_" + str(channels) + "chan_" + \
+              str(features_root) + "feat" + weight_type
+
+output_path = "D:\\upResNet\\256x256\\" + summary_str
+restore_path = output_path
+
+if channels == 3:  # RGB
+    data_suffix = "_x.npy"
+    mask_suffix = "_y.npy"
+else:  # grayscale
+    data_suffix = "_x_gray.npy"
+    mask_suffix = "_y_gray.npy"
+
+training_generator = generator(search_path=training_path + "/*npy", data_suffix=data_suffix, mask_suffix=mask_suffix,
+                               weight_suffix=weight_suffix, shuffle_data=False, n_class=channels)
+validation_generator = generator(search_path=validation_path + "/*npy", data_suffix=data_suffix,
+                                 mask_suffix=mask_suffix,
+                                 weight_suffix=weight_suffix, shuffle_data=False, n_class=channels)
+testing_generator = generator(search_path=testing_path + "/*npy", data_suffix=data_suffix, mask_suffix=mask_suffix,
+                              weight_suffix=weight_suffix, shuffle_data=False, n_class=channels)
 
 training_iters = int(training_generator._get_number_of_files() / batch_size) + \
-                     (training_generator._get_number_of_files() % batch_size > 0)
+                 (training_generator._get_number_of_files() % batch_size > 0)
 total_validation_data = validation_generator._get_number_of_files()
 
-net = upResNet(padding=padding, channels=channels, resolution=resolution, layers_per_transpose=layers_per_transpose)
+net = upResNet(padding=padding, channels=channels, resolution=resolution, layers_per_transpose=layers_per_transpose,
+               features_root=features_root)
 
 opt_kwargs = dict(learning_rate=learning_rate)
 
@@ -633,4 +661,14 @@ trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validati
 trainer.train(training_data_provider=training_generator, validation_data_provider=validation_generator,
               testing_data_provider=testing_generator, restore_path=restore_path, output_path=output_path,
               total_validation_data=total_validation_data, training_iters=training_iters, epochs=epochs,
-              restore=restore, test_after=test_after, prediction_path=output_path+'\\prediction')
+              restore=restore, test_after=test_after, prediction_path=output_path + '\\prediction')
+
+test_x, test_y, test_w = testing_generator(1)
+prediction = net.predict(output_path + "/model.ckpt", test_x)
+
+if channels==3:
+    pred_disp = prediction[0]
+else:
+    pred_disp = prediction[0,...,0]
+
+Image.fromarray(pred_disp.astype('uint8')).save(testing_path + "\\final_result_str" + summary_str + ".jpg")
