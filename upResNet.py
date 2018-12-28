@@ -12,6 +12,7 @@ import os
 from image_util import ImageDataProvider as generator
 import shutil
 from skimage.transform import resize
+from scipy.misc import imresize
 import logging
 from PIL import Image
 
@@ -175,7 +176,7 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
 
 
 class upResNet(object):
-    def __init__(self, padding, channels=3, resolution=2, layers_per_transpose=2, **kwargs):
+    def __init__(self, padding, channels=3, resolution=2, layers_per_transpose=2, loss_func=None, **kwargs):
         tf.reset_default_graph()
 
         self.summaries = kwargs.get("summaries", True)
@@ -189,7 +190,7 @@ class upResNet(object):
         logits, self.variables = create_network(self.x, keep_prob=0.75, channels=channels, resolution=resolution,
                                                 padding=padding, layers_per_transpose=layers_per_transpose, **kwargs)
 
-        self.cost = self._get_cost(logits)
+        self.cost = self._get_cost(logits, loss_func)
         self.channels = channels
 
         self.gradients_node = tf.gradients(self.cost, self.variables)
@@ -200,16 +201,20 @@ class upResNet(object):
             self.predicter = logits  # may change?
             self.accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.to_int32(self.logits), tf.to_int32(self.y)), tf.float32))
 
-    def _get_cost(self, logits):
+    def _get_cost(self, logits, loss_func=None):
         with tf.name_scope("cost"):
             flat_logits = tf.reshape(logits, [-1, channels])  # channels may not reach this scope
             flat_labels = tf.reshape(self.y, [-1, channels])
             flat_map = tf.reshape(self.w, [-1, 1])
 
-            """
-            Current plan for loss function is a square of the pixelwise difference between X and Y
-            """
-            loss_map = tf.math.squared_difference(flat_logits, flat_labels)
+            # TODO: adapt to problem. (1 - p_i) does not make sense if data is not one-hot
+            if loss_func == "focal":
+                loss_map = tf.math.multiply(tf.math.square(tf.math.subtract(tf.ones(flat_logits.shape), flat_logits)),
+                                            tf.math.multiply(tf.math.log(flat_logits), flat_labels))
+            elif loss_func == "cross_entropy":
+                loss_map = tf.math.multiply(tf.math.log(flat_logits), flat_labels)
+            else:
+                loss_map = tf.math.squared_difference(flat_logits, flat_labels)
             loss = tf.reduce_mean(tf.multiply(loss_map, flat_map))
 
             return loss
@@ -432,14 +437,14 @@ class Trainer(object):
             if not include_map:
                 test_w = np.ones
             if i == validation_iters - 1 and last_batch_size == 0:
-                pred_shape, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w, name=name,
-                                                                   training_losses=training_average_losses,
-                                                                   training_accuracies=training_accuracies,
-                                                                   validation_losses=validation_average_losses,
-                                                                   validation_accuracies=validation_accuracies,
-                                                                   save_img=1)
+                pred_shape, loss, accuracy, _ = self.store_prediction(sess, test_x, test_y, test_w, name=name,
+                                                                      training_losses=training_average_losses,
+                                                                      training_accuracies=training_accuracies,
+                                                                      validation_losses=validation_average_losses,
+                                                                      validation_accuracies=validation_accuracies,
+                                                                      save_img=1)
             else:
-                _, loss, accuracy = self.store_prediction(sess, test_x, test_y, test_w)
+                _, loss, accuracy, _ = self.store_prediction(sess, test_x, test_y, test_w)
             total_validation_loss += loss
             total_validation_acc += accuracy
 
@@ -490,9 +495,9 @@ class Trainer(object):
             pred_disp = prediction[0]
         else:
             plt.gray()
-            y_disp = y_cropped[0,...,0]
-            x_disp = x_resize[:,...,0]
-            pred_disp = prediction[0,...,0]
+            y_disp = y_cropped[0, ..., 0]
+            x_disp = x_resize[:, ..., 0]
+            pred_disp = prediction[0, ..., 0]
 
         if save_img:
             plt.rcParams.update({'font.size': 8})
@@ -586,7 +591,7 @@ class Trainer(object):
             plt.savefig("%s/%s.jpg" % (self.prediction_path, name))
             plt.close()
 
-        return pred_shape, loss, accuracy
+        return pred_shape, loss, accuracy, x_resize_acc
 
     def output_epoch_stats(self, epoch, total_loss, training_iters, lr):
         logging.info(
@@ -608,29 +613,75 @@ class Trainer(object):
         return acc
 
 
-training_path = 'D:\\upResNet\\256x256\\training'
-validation_path = training_path
-testing_path = training_path
+def compare_accuracies(net, generator, model_path, channels, superior_save_path, inferior_save_path):
+    pred_superior_counter = 0
+    total_files = generator._get_number_of_files()
+    for i in range(0, total_files):
+        test_x, test_y, test_w = generator(1)
+        prediction = net.predict(model_path + "/model.ckpt", test_x)
+        x_resize = resize(test_x[0], (prediction.shape[1],prediction.shape[2]))
+        x_resize_acc = np.mean(np.equal(x_resize.astype(np.int32), test_y[0].astype(np.int32))).astype(np.float32)
+        pred_acc = np.mean(np.equal(prediction[0].astype(np.int32), test_y[0].astype(np.int32))).astype(np.float32)
+        fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+        if channels == 3:
+            x_disp = x_resize
+            pred_disp = prediction[0]
+        else:
+            plt.gray()
+            x_disp = x_resize[:, ..., 0]
+            pred_disp = prediction[0, ..., 0]
+        ax[0].imshow(x_disp.astype('uint8'), aspect="auto")
+        ax[0].set_title("X Resize:\nAccuracy: {:.4f}".format(x_resize_acc))
+        ax[1].imshow(pred_disp.astype('uint8'), aspect="auto")
+        ax[1].set_title("Prediction:\nAccuracy: {:.4f}".format(pred_acc))
+        if pred_acc > x_resize_acc:
+            plt.savefig(superior_save_path + str(i) + ".jpg")
+            pred_superior_counter += 1
+        else:
+            plt.savefig(inferior_save_path + str(i) + ".jpg")
+        plt.close()
+    pred_superior_ratio = pred_superior_counter / total_files
+    print(str(int(pred_superior_ratio * 100)) + "% of predictions were more accurate than the resized x images.")
+
+def test_single_img_file(img_path, net, model_path, channels, start_size=128):
+    img = Image.open(img_path)
+    if channels == 1:
+        img = img.convert('L')
+    img_x = imresize(img, (start_size,start_size,channels))
+    prediction = net.predict(model_path + "/model.ckpt", img_x.reshape(1, start_size, start_size, channels))
+    if channels == 1:
+        prediction = prediction[0,...,0]
+    else:
+        prediction = prediction[0]
+    plt.imshow(prediction)
+    plt.show()
+    pred_img = Image.fromarray(prediction.astype('uint8'))
+    pred_img.save(img_path[0:-4] + "_prediction.jpg")
+
+training_path = 'D:\\flickr-image-dataset\\flickr30k_images\\256x256\\smallset\\Training'
+validation_path = 'D:\\flickr-image-dataset\\flickr30k_images\\256x256\\smallset\\Validation'
+testing_path = 'D:\\flickr-image-dataset\\flickr30k_images\\256x256\\smallset\\Testing'
 
 restore = True
 padding = True
 test_after = False
 channels = 1
 resolution = 2
-batch_size = 8
+batch_size = 4
 validation_batch_size = batch_size
-epochs = 239
+epochs = 50
 learning_rate = 0.001
 layers_per_transpose = 3
-features_root = 64
+features_root = 128
+loss_func = "square_diff"
 
 weight_type = "_sobel"
 weight_suffix = weight_type + ".npy"
 
 summary_str = str(resolution) + "res_" + str(layers_per_transpose) + "layers_" + str(channels) + "chan_" + \
-              str(features_root) + "feat" + weight_type
+              str(features_root) + "feat" + weight_type + "_" + loss_func
 
-output_path = "D:\\upResNet\\256x256\\" + summary_str
+output_path = "D:\\upResNet\\256x256\\smallset\\" + summary_str
 restore_path = output_path
 
 if channels == 3:  # RGB
@@ -646,7 +697,7 @@ validation_generator = generator(search_path=validation_path + "/*npy", data_suf
                                  mask_suffix=mask_suffix,
                                  weight_suffix=weight_suffix, shuffle_data=False, n_class=channels)
 testing_generator = generator(search_path=testing_path + "/*npy", data_suffix=data_suffix, mask_suffix=mask_suffix,
-                              weight_suffix=weight_suffix, shuffle_data=False, n_class=channels)
+                              weight_suffix='_w.npy', shuffle_data=False, n_class=channels)
 
 training_iters = int(training_generator._get_number_of_files() / batch_size) + \
                  (training_generator._get_number_of_files() % batch_size > 0)
@@ -666,9 +717,15 @@ trainer.train(training_data_provider=training_generator, validation_data_provide
 test_x, test_y, test_w = testing_generator(1)
 prediction = net.predict(output_path + "/model.ckpt", test_x)
 
-if channels==3:
+if channels == 3:
     pred_disp = prediction[0]
 else:
-    pred_disp = prediction[0,...,0]
+    pred_disp = prediction[0, ..., 0]
 
-Image.fromarray(pred_disp.astype('uint8')).save(testing_path + "\\final_result_str" + summary_str + ".jpg")
+# test_single_img_file(img_path="C:\\Users\\Nick Nagy\\Desktop\\Samples\\t.png", net=net, model_path=output_path,
+#                      channels=channels)
+# Image.fromarray(pred_disp.astype('uint8')).save(testing_path + "\\final_result" + summary_str + ".jpg")
+#compare_path = validation_path + "\\Accuracy Comparisons\\"
+#compare_accuracies(net=net, generator=validation_generator, model_path=output_path, channels=channels,
+#                   superior_save_path=compare_path + "Superior\\", inferior_save_path=compare_path + "Inferior\\")
+
