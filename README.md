@@ -4,7 +4,7 @@
 
 **qLearn**: Implementation of Q-Learning algorithm. Includes classes for Frogger arcade game/agent, and visualization methods.
 
-**edgeDetectory**: Edge detection algorithms.
+**edgeDetector**: Edge detection algorithms.
 
 **resolutionDatabase**: for generating x, y and weight images for upResNet
 
