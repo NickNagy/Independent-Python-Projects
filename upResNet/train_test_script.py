@@ -2,8 +2,8 @@ import numpy as np
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from PIL import Image
-#import upResNet
-import upResNet_v2
+#from upResNet import upResNet, Trainer
+from upResNet_v2 import upResNet, Trainer
 from image_util import ImageDataProvider as generator
 from skimage.transform import resize
 from scipy.misc import imresize
