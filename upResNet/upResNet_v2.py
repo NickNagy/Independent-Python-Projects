@@ -13,7 +13,7 @@ from image_util import ImageDataProvider as generator
 import shutil
 from skimage.transform import resize
 import logging
-import layers
+from layers import weight_variable, bias_variable, conv2d, deconv2d, get_image_summary, crop_to_shape
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -141,13 +141,16 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
 
     return outputs, variables
 
-class upResNet_v2(object):
+class upResNet(object):
     def __init__(self, padding, in_shape, channels=3, resolution=2, layers_per_transpose=2, loss_func=None, **kwargs):
         assert in_shape == 128 or in_shape == 256 or in_shape == 512
 
         tf.reset_default_graph()
 
         self.summaries = kwargs.get("summaries", True)
+
+        self.channels = channels
+        self.resolution = resolution
 
         out_shape = in_shape*2**(resolution-1)
 
@@ -182,8 +185,8 @@ class upResNet_v2(object):
 
     def _get_cost(self):
         with tf.name_scope("cost"):
-            flat_logits = tf.reshape(self.logits, [-1, channels])  # channels may not reach this scope
-            flat_labels = tf.reshape(self.y, [-1, channels])
+            flat_logits = tf.reshape(self.logits, [-1, self.channels])  # channels may not reach this scope
+            flat_labels = tf.reshape(self.y, [-1, self.channels])
             flat_map = tf.reshape(self.w, [-1, 1])
 
             loss_map = tf.math.squared_difference(flat_logits, flat_labels)
@@ -196,8 +199,8 @@ class upResNet_v2(object):
         with tf.Session() as sess:
             lgts = sess.run(init)
             self.restore(sess, path)
-            out_shape = x_test.shape[1]*2**(resolution-1)
-            y_dummy = np.empty((x_test.shape[0], out_shape, out_shape, channels))
+            out_shape = x_test.shape[1]*2**(self.resolution-1)
+            y_dummy = np.empty((x_test.shape[0], out_shape, out_shape, self.channels))
             w_dummy = np.empty((x_test.shape[0], out_shape, out_shape, 1))
             prediction = sess.run(self.predicter, feed_dict={self.x: x_test, self.y: y_dummy, self.w: w_dummy})
         return prediction
