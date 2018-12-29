@@ -8,10 +8,6 @@ from image_util import ImageDataProvider as generator
 from skimage.transform import resize
 from scipy.misc import imresize
 
-training_path = 'D:\\upResNet\\256x256\\training'
-validation_path = training_path #'D:\\flickr-image-dataset\\flickr30k_images\\256x256\\smallset\\Validation'
-testing_path = training_path #'D:\\flickr-image-dataset\\flickr30k_images\\256x256\\smallset\\Testing'
-
 def compare_accuracies(net, generator, model_path, channels, superior_save_path, inferior_save_path):
     pred_superior_counter = 0
     total_files = generator._get_number_of_files()
@@ -57,18 +53,22 @@ def test_single_img_file(img_path, net, model_path, channels, start_size=128):
     pred_img = Image.fromarray(prediction.astype('uint8'))
     pred_img.save(img_path[0:-4] + "_prediction.jpg")
 
+training_path = 'D:\\upResNet\\256x256\\training'
+validation_path = training_path #'D:\\flickr-image-dataset\\flickr30k_images\\256x256\\smallset\\Validation'
+testing_path = training_path #'D:\\flickr-image-dataset\\flickr30k_images\\256x256\\smallset\\Testing'
+
 restore = True
 padding = True
 test_after = False
 channels = 1
 in_shape = 128
 resolution = 2
-batch_size = 4
+batch_size = 2
 validation_batch_size = batch_size
 epochs = 50
 learning_rate = 0.001
 layers_per_transpose = 1
-features_root = 64
+features_root = 128
 
 weight_type = "_sobel"
 weight_suffix = weight_type + ".npy"
