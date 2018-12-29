@@ -1,15 +1,19 @@
 # Python-Projects
 
-**Galaxy**: Project to test K-means for predicting galaxy centers from images of space.
+**Galaxy**: project to test K-means for predicting galaxy centers from images of space.
 
-**qLearn**: Implementation of Q-Learning algorithm. Includes classes for Frogger arcade game/agent, and visualization methods.
+**edgeDetector**: edge detection algorithms.
 
-**edgeDetector**: Edge detection algorithms.
+**fileFrequencyReader**: ...
+
+**image_util**: for generating image batches. *Modified from https://github.com/jakeret/tf_unet to better fit upResNet
+
+**qLearn**: implementation of Q-Learning algorithm. Includes classes for Frogger arcade game/agent, and visualization methods.
 
 **resolutionDatabase**: for generating x, y and weight images for upResNet
 
 **train_test_script**: script for creating, restoring, training, testing upResNet models
 
-**upResNet**: fully-conv CNN for predicting higher res images from lower res ones. Requires image_util.py from https://github.com/jakeret/tf_unet. *Minor modifications have been made to image_util to better fit the problem
+**upResNet**: fully-conv CNN for predicting higher res images from lower res ones.
 
 **upResNet_v2**: version of upResNet that allows for multiple resizing options from the same model. Has many bugs.
