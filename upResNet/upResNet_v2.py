@@ -17,6 +17,9 @@ from layers import weight_variable, bias_variable, conv2d, deconv2d, get_image_s
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+
 # no pooling layers
 def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, channels=3, filter_size=3,
                    deconv_size=2,
@@ -196,7 +199,7 @@ class upResNet(object):
 
     def predict(self, path, x_test):
         init = tf.global_variables_initializer()
-        with tf.Session() as sess:
+        with tf.Session(config=config) as sess:
             lgts = sess.run(init)
             self.restore(sess, path)
             out_shape = x_test.shape[1]*2**(self.resolution-1)
@@ -314,7 +317,7 @@ class Trainer(object):
         except(FileNotFoundError):
             print("No prior training or validation data exists. Assuming new model")
 
-        with tf.Session() as sess:
+        with tf.Session(config=config) as sess:
             if write_graph:
                 tf.train.write_graph(sess.graph_def, output_path, "graph.pb", False)
 
