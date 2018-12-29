@@ -9,3 +9,5 @@
 **resolutionDatabase**: for generating x, y and weight images for upResNet
 
 **upResNet**: fully-conv CNN for predicting higher res images from lower res ones. Requires image_util.py from https://github.com/jakeret/tf_unet. *Minor modifications have been made to image_util to better fit the problem
+
+**upResNet_v2**: version of upResNet that allows for multiple resizing options from the same model. Has many bugs.
