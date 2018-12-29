@@ -669,13 +669,13 @@ channels = 1
 resolution = 2
 batch_size = 4
 validation_batch_size = batch_size
-epochs = 50
+epochs = 3
 learning_rate = 0.001
 layers_per_transpose = 3
 features_root = 128
 loss_func = "square_diff"
 
-weight_type = "_sobel"
+weight_type = "_w"
 weight_suffix = weight_type + ".npy"
 
 summary_str = str(resolution) + "res_" + str(layers_per_transpose) + "layers_" + str(channels) + "chan_" + \
@@ -708,24 +708,16 @@ net = upResNet(padding=padding, channels=channels, resolution=resolution, layers
 
 opt_kwargs = dict(learning_rate=learning_rate)
 
-trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validation_batch_size, opt_kwargs=opt_kwargs)
-trainer.train(training_data_provider=training_generator, validation_data_provider=validation_generator,
-              testing_data_provider=testing_generator, restore_path=restore_path, output_path=output_path,
-              total_validation_data=total_validation_data, training_iters=training_iters, epochs=epochs,
-              restore=restore, test_after=test_after, prediction_path=output_path + '\\prediction')
-
-test_x, test_y, test_w = testing_generator(1)
-prediction = net.predict(output_path + "/model.ckpt", test_x)
-
-if channels == 3:
-    pred_disp = prediction[0]
-else:
-    pred_disp = prediction[0, ..., 0]
+#trainer = Trainer(net=net, batch_size=batch_size, validation_batch_size=validation_batch_size, opt_kwargs=opt_kwargs)
+#trainer.train(training_data_provider=training_generator, validation_data_provider=validation_generator,
+#              testing_data_provider=testing_generator, restore_path=restore_path, output_path=output_path,
+#              total_validation_data=total_validation_data, training_iters=training_iters, epochs=epochs,
+#              restore=restore, test_after=test_after, prediction_path=output_path + '\\prediction')
 
 # test_single_img_file(img_path="C:\\Users\\Nick Nagy\\Desktop\\Samples\\t.png", net=net, model_path=output_path,
 #                      channels=channels)
-# Image.fromarray(pred_disp.astype('uint8')).save(testing_path + "\\final_result" + summary_str + ".jpg")
-#compare_path = validation_path + "\\Accuracy Comparisons\\"
-#compare_accuracies(net=net, generator=validation_generator, model_path=output_path, channels=channels,
-#                   superior_save_path=compare_path + "Superior\\", inferior_save_path=compare_path + "Inferior\\")
+
+compare_path = validation_path + "\\Accuracy Comparisons\\" + summary_str + "\\"
+compare_accuracies(net=net, generator=validation_generator, model_path=output_path, channels=channels,
+                   superior_save_path=compare_path + "Superior\\", inferior_save_path=compare_path + "Inferior\\")
 
