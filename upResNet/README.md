@@ -1,4 +1,4 @@
-#upResNet
+# upResNet
 
 **edgeDetector**: edge detection algorithms.
 
