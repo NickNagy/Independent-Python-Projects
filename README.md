@@ -8,6 +8,8 @@
 
 **image_util**: for generating image batches. *Modified from https://github.com/jakeret/tf_unet to better fit upResNet
 
+**layers**: variable, cropping and summary functions for upResNet. *Taken from different modules from https://github.com/jakeret/tf_unet
+
 **qLearn**: implementation of Q-Learning algorithm. Includes classes for Frogger arcade game/agent, and visualization methods.
 
 **resolutionDatabase**: for generating x, y and weight images for upResNet
