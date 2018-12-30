@@ -72,7 +72,7 @@ def create_network(x, keep_prob, padding=False, resolution=3, features_root=16, 
                     out_features = features_root
                 else:
                     in_features = out_features
-                    out_features *= 2 # change if necessary
+                    out_features = int(out_features/2) # change if necessary
                 stddev = np.sqrt(2/(filter_size ** 2 * out_features))
                 if size < width or size >= max_size:
                     trainable=False
