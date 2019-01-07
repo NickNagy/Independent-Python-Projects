@@ -4,7 +4,7 @@
 
 **upResNet**: project, training fully-CNN models to resize images to greater dimensions
 
-**Farneback**: implementation of the Farneback optical flow algorithm. Based on CV tutorial. Needs work.
+**Farneback**: implementation of the Farneback optical flow algorithm. Needs work.
 
 **fileFrequencyReader**: ...
 
