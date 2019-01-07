@@ -1,7 +1,6 @@
 """
 My implementation of the Farneback optical flow algorithm.
-Algorithm works under the assumption of spatial consistency, and differs from Lucas-Kanade in the sense that it does not 
-look for interest points.
+Algorithm works under the assumption of spatial consistency
 The motion vector v b/w two images can be found from the differential relationship:
     multiply(transpose(gradientImage), v) = -(timeDerivativeImage)
 If we have a matrix A of shape (, 2) where the columns represent x,y points in the gradient image, then mult(A.T, A)
@@ -10,7 +9,7 @@ creates a symmetrical matrix:
     [Sigma(Ix*Iy), Sigma(Iy*Iy)]
 If b is a row vector where each point represents a point in the time derivative image, then mult(A.T, b) is the dot
 product b/w the gradient image points and the time derivative points:
-    [[Sigma(x-distance*time], [Sigma(y-distance*time)]]       
+    [[Sigma(x-distance*time], [Sigma(y-distance*time)]]    ~
 """
 
 from numpy import *
@@ -25,16 +24,28 @@ gy_filter = array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
 t_filter = array([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
 
 debug = 0
-factor = -0.5
+factor = 1
 
 plt.gray()
 
-#(A.T*A)d = A.T*b
-def optical_flow(img1, img2, window_size, iterations=None, poly_n=5, poly_sigma=1.1):
-    img1 = gaussian_filter(img1, sigma=1.4)
-    img2 = gaussian_filter(img2, sigma=1.4)
-    Ix = signal.convolve2d(img1, gx_filter, boundary='symm', mode='same')
-    Iy = signal.convolve2d(img1, gy_filter, boundary='symm', mode='same')
+# TODO: implement grad. descent wrt weights in order to minimize e
+def optimize_neighborhood(A, b, w):
+    ATA = matmul(A.T, A)
+    ATb = matmul(A.T, b)
+    bTb = matmul(b.T, b)
+    e = w*ATA - matmul(matmul(w*linalg.pinv(ATA),w*ATb).T, w*ATb)
+    print("e(x): \n" + str(e))
+    return e
+
+def optical_flow(img1, img2, window_size, weights = 1.0, iterations=None, poly_n=5, poly_sigma=1.1):
+    #img1 = gaussian_filter(img1, sigma=1.4)
+    #img2 = gaussian_filter(img2, sigma=1.4)
+    Ix1 = signal.convolve2d(img1, gx_filter, boundary='symm', mode='same')
+    Ix2 = signal.convolve2d(img2, gx_filter, boundary='symm', mode='same')
+    Ix = 0.5*add(Ix1, Ix2)
+    Iy1 = signal.convolve2d(img1, gy_filter, boundary='symm', mode='same')
+    Iy2 = signal.convolve2d(img2, gy_filter, boundary='symm', mode='same')
+    Iy = 0.5*add(Iy1, Iy2)
     It = signal.convolve2d(img2, t_filter, boundary='symm', mode='same') + \
          signal.convolve2d(img1, -t_filter, boundary='symm', mode='same')
     if debug:
@@ -45,29 +56,26 @@ def optical_flow(img1, img2, window_size, iterations=None, poly_n=5, poly_sigma=
         ax[3].imshow(Iy, aspect="auto")
         ax[4].imshow(It, aspect="auto")
         plt.show()
-        #print("Ix: \n" + str(Ix))
-        #print("Iy: \n" + str(Iy))
-        #print("It: \n" + str(It))
     w = int(window_size/2)
-    u = zeros(img1.shape)#.flatten()#(img1.shape[0])
-    v = zeros(img1.shape)#.flatten()#(img1.shape[1])
+    u = zeros(img1.shape)
+    v = zeros(img1.shape)
     i = w
-    while i < img1.shape[0]-w: #for i in range(w, img1.shape[0]-w):
+    # TODO: fix indexing issues
+    while i < img1.shape[0]-w:
         j = w
-        while j < img1.shape[1] - w: #for j in range(w, img1.shape[1]-w):
+        while j < img1.shape[1] - w:
             Ax = Ix[i-w:i+w+1,j-w:j+w+1].flatten()
             Ay = Iy[i-w:i+w+1,j-w:j+w+1].flatten()
-            b = It[i-w:i+w+1,j-w:j+w+1].flatten()
-            A = vstack([Ax,Ay]).T
+            b = -1 * It[i-w:i+w+1,j-w:j+w+1].flatten().T
+            A = column_stack([Ax,Ay])
             try:
+                e = optimize_neighborhood(A, b, weights)
                 d = factor*matmul(linalg.pinv(matmul(A.T,A)), matmul(A.T,b))
-                #print(d.shape)
                 u[i-w:i+w+1, j-w:j+w+1] = d[0]
                 v[i-w:i+w+1, j-w:j+w+1] = d[1]
                 if debug:
                     fig, ax = plt.subplots(2, 5, sharex=False, sharey=False)
-                    px, py = (j - w), (i - w)  # top left corner
-                    # rect = Rectangle((px,py), w*2, w*2, color='r', fill=False)
+                    px, py = (j - w), (i - w)
                     ax[0, 0].imshow(Ix, aspect="auto")
                     ax[0, 0].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
                     ax[1, 0].imshow(Ix[i - w:i + w + 1, j - w:j + w + 1], aspect="auto")
@@ -84,16 +92,11 @@ def optical_flow(img1, img2, window_size, iterations=None, poly_n=5, poly_sigma=
                     ax[0, 4].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
                     ax[1, 4].imshow(v[i-w: i + w + 1, j-w: j+w+1], aspect="auto")
                     plt.show()
-                #u[i*j] = factor*#matmul(linalg.inv(matmul(Ax.T, Ax)), matmul(Ax.T, b))#d[0]
-                #v[i*j] = factor*matmul(linalg.inv(matmul(Ay.T, Ay)), matmul(Ay.T, b))#d[1]
-                #if debug:
-                #    print("U: \n" + str(u))
-                #    print("V: \n" + str(v))
             except linalg.LinAlgError:
                 print("Regions must be square!")
             j += window_size
         i += window_size
-    return stack([u, v], axis=2) #vstack([u,v])
+    return stack([u, v], axis=2)
 
 def test():
     img1 = random.rand(20,20)
@@ -105,9 +108,6 @@ def test():
     ax[1].imshow(img2, aspect="auto")
     plt.show()
     flow = optical_flow(img1,img2,window_size=3)
-    #print("********************")
-    #print("U: \n" + str(u))
-    #print("V: \n" + str(v))
     draw_flow(img2, flow)
 
 def draw_flow(gray_img, flow, step=16):
@@ -132,7 +132,7 @@ def show_vid_vectors():
     while True:
         ret, img = cap.read()
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        my_flow = optical_flow(prev_gray, gray, window_size=20)
+        my_flow = optical_flow(prev_gray, gray, window_size=15)
         flow = cv2.calcOpticalFlowFarneback(prev_gray, gray,None,0.5,3,15,3,5,1.2,0)
         prev_gray = gray
         my_flow_img = draw_flow(gray, my_flow)
@@ -154,7 +154,7 @@ def show_saved_vid_vectors(num_imgs = 20):
     for i in range(1, num_imgs):
         prev = cv2.cvtColor(cv2.imread(str(i-1) + ".jpg"), cv2.COLOR_BGR2GRAY)
         curr = cv2.cvtColor(cv2.imread(str(i) + ".jpg"), cv2.COLOR_BGR2GRAY)
-        flow = optical_flow(prev, curr, window_size=50)
+        flow = optical_flow(prev, curr, window_size=15)
         flow_img = draw_flow(curr, flow)
         cv2.imwrite("Flow " + str(i) + ".jpg", flow_img)
 
@@ -162,4 +162,5 @@ def show_saved_vid_vectors(num_imgs = 20):
 #show_saved_vid_vectors()
 #test()
 show_vid_vectors()
+
 
