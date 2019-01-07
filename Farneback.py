@@ -9,9 +9,7 @@ creates a symmetrical matrix:
     [Sigma(Ix*Iy), Sigma(Iy*Iy)]
 If b is a row vector where each point represents a point in the time derivative image, then mult(A.T, b) is the dot
 product b/w the gradient image points and the time derivative points:
-    [[Sigma(x-distance*time], [Sigma(y-distance*time)]]
-It is intuitive that:
-    mult(mult(A.T,A), v) = -mult(A.T, b)        ~       
+    [[Sigma(x-distance*time], [Sigma(y-distance*time)]]       
 """
 
 from numpy import *
