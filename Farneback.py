@@ -1,6 +1,7 @@
 """
 My implementation of the Farneback optical flow algorithm.
-Algorithm works under the assumption of spatial consistency
+Algorithm works under the assumption of spatial consistency, and differs from Lucas-Kanade in the sense that it does not 
+look for interest points.
 The motion vector v b/w two images can be found from the differential relationship:
     multiply(transpose(gradientImage), v) = -(timeDerivativeImage)
 If we have a matrix A of shape (, 2) where the columns represent x,y points in the gradient image, then mult(A.T, A)
