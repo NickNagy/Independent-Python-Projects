@@ -1,12 +1,29 @@
+"""
+My implementation of the Farneback optical flow algorithm.
+Algorithm works under the assumption of spatial consistency
+The motion vector v b/w two images can be found from the differential relationship:
+    multiply(transpose(gradientImage), v) = -(timeDerivativeImage)
+If we have a matrix A of shape (, 2) where the columns represent x,y points in the gradient image, then mult(A.T, A)
+creates a symmetrical matrix:
+    [[Sigma(Ix*Ix), Sigma(Ix*Iy)],
+    [Sigma(Ix*Iy), Sigma(Iy*Iy)]
+If b is a row vector where each point represents a point in the time derivative image, then mult(A.T, b) is the dot
+product b/w the gradient image points and the time derivative points:
+    [[Sigma(x-distance*time], [Sigma(y-distance*time)]]
+It is intuitive that:
+    mult(mult(A.T,A), v) = -mult(A.T, b)        ~       
+"""
+
 from numpy import *
 from scipy import signal
+from scipy.ndimage import gaussian_filter
 import cv2
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 
 gx_filter = array([[1, 0, -1], [2, 0, -2], [1, 0, -1]])
 gy_filter = array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
-t_filter = array([[1, 1, 1],[1, 1, 1],[1, 1, 1]])
+t_filter = array([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
 
 debug = 0
 factor = -0.5
@@ -15,6 +32,8 @@ plt.gray()
 
 #(A.T*A)d = A.T*b
 def optical_flow(img1, img2, window_size, iterations=None, poly_n=5, poly_sigma=1.1):
+    img1 = gaussian_filter(img1, sigma=1.4)
+    img2 = gaussian_filter(img2, sigma=1.4)
     Ix = signal.convolve2d(img1, gx_filter, boundary='symm', mode='same')
     Iy = signal.convolve2d(img1, gy_filter, boundary='symm', mode='same')
     It = signal.convolve2d(img2, t_filter, boundary='symm', mode='same') + \
@@ -104,8 +123,6 @@ def draw_flow(gray_img, flow, step=16):
     for (x1,y1),(x2,y2) in lines:
         cv2.line(vis,(x1,y1),(x2,y2),(0,255,0),1)
         cv2.circle(vis,(x1,y1),1,(0,255,0),-1)
-    #plt.imshow(vis)
-    #plt.show()
     return vis
 
 def show_vid_vectors():
@@ -116,7 +133,6 @@ def show_vid_vectors():
     while True:
         ret, img = cap.read()
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # TODO: expects flow to have same shape as prev_gray
         my_flow = optical_flow(prev_gray, gray, window_size=20)
         flow = cv2.calcOpticalFlowFarneback(prev_gray, gray,None,0.5,3,15,3,5,1.2,0)
         prev_gray = gray
@@ -139,7 +155,7 @@ def show_saved_vid_vectors(num_imgs = 20):
     for i in range(1, num_imgs):
         prev = cv2.cvtColor(cv2.imread(str(i-1) + ".jpg"), cv2.COLOR_BGR2GRAY)
         curr = cv2.cvtColor(cv2.imread(str(i) + ".jpg"), cv2.COLOR_BGR2GRAY)
-        flow = optical_flow(prev, curr, window_size=20)
+        flow = optical_flow(prev, curr, window_size=50)
         flow_img = draw_flow(curr, flow)
         cv2.imwrite("Flow " + str(i) + ".jpg", flow_img)
 
