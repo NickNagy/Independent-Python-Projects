@@ -40,7 +40,7 @@ def optimize_neighborhood(A, b, weights, iterations=3, alpha=1e-8):
     for i in range(0, iterations):
         e = weights*bTb - matmul(matmul(weights*linalg.pinv(ATA),weights*ATb).T, weights*ATb)
         #print("e(x): \n" + str(e))
-        cost = bTb - 2*weights*matmul(matmul(linalg.pinv(ATA),ATb).T,ATb) # placeholder gradient, needs to be corrected
+        cost = bTb - 3*(weights**2)*matmul(matmul(linalg.pinv(ATA),ATb).T,ATb) # placeholder gradient, needs to be corrected
         if weights - alpha*cost > 0:
             weights -= alpha*cost
         if debug:
