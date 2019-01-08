@@ -33,7 +33,8 @@ factor = 1
 plt.gray()
 
 # TODO: implement grad. descent wrt weights in order to minimize e, then return w
-def optimize_neighborhood(A, b, weights, iterations=3, alpha=1e-8):
+def optimize_neighborhood(A, b, weights, iterations=3, alpha=1e-9, divisions=None):
+    assert divisions==None or A.shape[0]%divisions==0
     ATA = matmul(A.T, A)
     ATb = matmul(A.T, b)
     bTb = matmul(b.T, b)
@@ -41,13 +42,34 @@ def optimize_neighborhood(A, b, weights, iterations=3, alpha=1e-8):
         e = weights*bTb - matmul(matmul(weights*linalg.pinv(ATA),weights*ATb).T, weights*ATb)
         #print("e(x): \n" + str(e))
         cost = bTb - 3*(weights**2)*matmul(matmul(linalg.pinv(ATA),ATb).T,ATb) # placeholder gradient, needs to be corrected
-        if weights - alpha*cost > 0:
-            weights -= alpha*cost
-        if debug:
-            print("Iteration: " + str(i) + "\n  e(x): " + str(e) + "\n cost: " + str(cost) + "\n weights: " + str(weights))
+        #if weights - alpha*cost > 0:
+        weights -= alpha*cost
+        #if debug:
+            #print("Iteration: " + str(i) + "\n  e(x): " + str(e) + "\n cost: " + str(cost) + "\n weights: " + str(weights))
     return weights
 
-def optical_flow(img1, img2, window_size, init_weights=1.0, iterations=1, poly_n=5, poly_sigma=1.1):
+def plot_patches(Ix, Iy, It, u, v, i, j, w):
+    fig, ax = plt.subplots(2, 5, sharex=False, sharey=False)
+    px, py = (j - w), (i - w)
+    ax[0, 0].imshow(Ix, aspect="auto")
+    ax[0, 0].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
+    ax[1, 0].imshow(Ix[i - w:i + w + 1, j - w:j + w + 1], aspect="auto")
+    ax[0, 1].imshow(Iy, aspect="auto")
+    ax[0, 1].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
+    ax[1, 1].imshow(Iy[i - w:i + w + 1, j - w:j + w + 1], aspect="auto")
+    ax[0, 2].imshow(It, aspect="auto")
+    ax[0, 2].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
+    ax[1, 2].imshow(It[i - w:i + w + 1, j - w:j + w + 1], aspect="auto")
+    ax[0, 3].imshow(u, aspect="auto")
+    ax[0, 3].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
+    ax[1, 3].imshow(u[i - w: i + w + 1, j - w: j + w + 1], aspect="auto")
+    ax[0, 4].imshow(v, aspect="auto")
+    ax[0, 4].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
+    ax[1, 4].imshow(v[i - w: i + w + 1, j - w: j + w + 1], aspect="auto")
+    plt.savefig("D:\\CV\\Tracking Movement\\Plots\\" + str(i) + "_" + str(j) + ".jpg")
+    plt.close()#plt.show()
+
+def optical_flow(img1, img2, window_size, init_weights=1.0, iterations=10, poly_n=5, poly_sigma=1.1):
     #img1 = gaussian_filter(img1, sigma=1.4)
     #img2 = gaussian_filter(img2, sigma=1.4)
     Ix1 = signal.convolve2d(img1, gx_filter, boundary='symm', mode='same')
@@ -58,19 +80,11 @@ def optical_flow(img1, img2, window_size, init_weights=1.0, iterations=1, poly_n
     Iy = 0.5*add(Iy1, Iy2)
     It = signal.convolve2d(img2, t_filter, boundary='symm', mode='same') + \
          signal.convolve2d(img1, -t_filter, boundary='symm', mode='same')
-    if debug:
-        fig, ax = plt.subplots(1, 5, sharex=True, sharey=True)
-        ax[0].imshow(img1, aspect="auto")
-        ax[1].imshow(img2, aspect="auto")
-        ax[2].imshow(Ix, aspect="auto")
-        ax[3].imshow(Iy, aspect="auto")
-        ax[4].imshow(It, aspect="auto")
-        plt.show()
     w = int(window_size/2)
     u = zeros(img1.shape)
     v = zeros(img1.shape)
     i = w
-    # TODO: fix indexing issues
+    # TODO: fix indexing issues --> see plot_patches()
     while i < img1.shape[0]-w:
         j = w
         while j < img1.shape[1] - w:
@@ -84,24 +98,7 @@ def optical_flow(img1, img2, window_size, init_weights=1.0, iterations=1, poly_n
                 u[i-w:i+w+1, j-w:j+w+1] = d[0]
                 v[i-w:i+w+1, j-w:j+w+1] = d[1]
                 if debug:
-                    fig, ax = plt.subplots(2, 5, sharex=False, sharey=False)
-                    px, py = (j - w), (i - w)
-                    ax[0, 0].imshow(Ix, aspect="auto")
-                    ax[0, 0].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
-                    ax[1, 0].imshow(Ix[i - w:i + w + 1, j - w:j + w + 1], aspect="auto")
-                    ax[0, 1].imshow(Iy, aspect="auto")
-                    ax[0, 1].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
-                    ax[1, 1].imshow(Iy[i - w:i + w + 1, j - w:j + w + 1], aspect="auto")
-                    ax[0, 2].imshow(It, aspect="auto")
-                    ax[0, 2].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
-                    ax[1, 2].imshow(It[i - w:i + w + 1, j - w:j + w + 1], aspect="auto")
-                    ax[0, 3].imshow(u, aspect="auto")
-                    ax[0, 3].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
-                    ax[1, 3].imshow(u[i-w: i + w + 1, j-w: j+w+1], aspect="auto")
-                    ax[0, 4].imshow(v, aspect="auto")
-                    ax[0, 4].add_patch(Rectangle((px, py), w * 2, w * 2, color='r', fill=False))
-                    ax[1, 4].imshow(v[i-w: i + w + 1, j-w: j+w+1], aspect="auto")
-                    plt.show()
+                    plot_patches(Ix, Iy, It, u, v, i, j, w)
             except linalg.LinAlgError:
                 print("Regions must be square!")
             j += window_size
@@ -138,18 +135,19 @@ def show_vid_vectors():
     cap = cv2.VideoCapture(0)
     ret, img = cap.read()
     prev_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    #cv2.imwrite("Vectors_Orig.jpg", img)
     count = 0
     while True:
         ret, img = cap.read()
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        my_flow = optical_flow(prev_gray, gray, window_size=15)
+        my_flow = optical_flow(prev_gray, gray, window_size=5, iterations=0)
         flow = cv2.calcOpticalFlowFarneback(prev_gray, gray,None,0.5,3,15,3,5,1.2,0)
         prev_gray = gray
         my_flow_img = draw_flow(gray, my_flow)
         flow_img = draw_flow(gray, flow)
         cv2.imshow('My Algorithm', my_flow_img)
         cv2.imshow('CV Algorithm', flow_img)
-        #cv2.imwrite(str(count) + ".jpg", flow_img)
+        #cv2.imwrite("Vectors_" + str(count) + ".jpg", my_flow_img)
         count += 1
         if cv2.waitKey(10) == 27:
             break
@@ -172,5 +170,3 @@ def show_saved_vid_vectors(num_imgs = 20):
 #show_saved_vid_vectors()
 #test()
 show_vid_vectors()
-
-
