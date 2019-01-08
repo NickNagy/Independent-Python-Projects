@@ -9,7 +9,11 @@ creates a symmetrical matrix:
     [Sigma(Ix*Iy), Sigma(Iy*Iy)]
 If b is a row vector where each point represents a point in the time derivative image, then mult(A.T, b) is the dot
 product b/w the gradient image points and the time derivative points:
-    [[Sigma(x-distance*time], [Sigma(y-distance*time)]]    ~
+    [[Sigma(x-distance*time], [Sigma(y-distance*time)]]
+
+The results of my implementation are currently pretty noisy. I am trying to improve upon it by
+    a) weighting pixel regions by optimizing e(x), defined in the original Farneback paper (Section 3.2)
+    b) creating a pyramid of images of different resolutions
 """
 
 from numpy import *
@@ -28,16 +32,22 @@ factor = 1
 
 plt.gray()
 
-# TODO: implement grad. descent wrt weights in order to minimize e
-def optimize_neighborhood(A, b, w):
+# TODO: implement grad. descent wrt weights in order to minimize e, then return w
+def optimize_neighborhood(A, b, weights, iterations=3, alpha=1e-8):
     ATA = matmul(A.T, A)
     ATb = matmul(A.T, b)
     bTb = matmul(b.T, b)
-    e = w*ATA - matmul(matmul(w*linalg.pinv(ATA),w*ATb).T, w*ATb)
-    print("e(x): \n" + str(e))
-    return e
+    for i in range(0, iterations):
+        e = weights*bTb - matmul(matmul(weights*linalg.pinv(ATA),weights*ATb).T, weights*ATb)
+        #print("e(x): \n" + str(e))
+        cost = bTb - 2*weights*matmul(matmul(linalg.pinv(ATA),ATb).T,ATb) # placeholder gradient, needs to be corrected
+        if weights - alpha*cost > 0:
+            weights -= alpha*cost
+        if debug:
+            print("Iteration: " + str(i) + "\n  e(x): " + str(e) + "\n cost: " + str(cost) + "\n weights: " + str(weights))
+    return weights
 
-def optical_flow(img1, img2, window_size, weights = 1.0, iterations=None, poly_n=5, poly_sigma=1.1):
+def optical_flow(img1, img2, window_size, init_weights=1.0, iterations=1, poly_n=5, poly_sigma=1.1):
     #img1 = gaussian_filter(img1, sigma=1.4)
     #img2 = gaussian_filter(img2, sigma=1.4)
     Ix1 = signal.convolve2d(img1, gx_filter, boundary='symm', mode='same')
@@ -69,8 +79,8 @@ def optical_flow(img1, img2, window_size, weights = 1.0, iterations=None, poly_n
             b = -1 * It[i-w:i+w+1,j-w:j+w+1].flatten().T
             A = column_stack([Ax,Ay])
             try:
-                e = optimize_neighborhood(A, b, weights)
-                d = factor*matmul(linalg.pinv(matmul(A.T,A)), matmul(A.T,b))
+                weights = optimize_neighborhood(A, b, init_weights, iterations)
+                d = factor*matmul(weights*linalg.pinv(matmul(A.T,A)), weights*matmul(A.T,b))
                 u[i-w:i+w+1, j-w:j+w+1] = d[0]
                 v[i-w:i+w+1, j-w:j+w+1] = d[1]
                 if debug:
