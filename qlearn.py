@@ -36,7 +36,7 @@ class QLearn:
     """
 
     def learn(self):
-        fig, ax = plt.subplots(3) #2, 2)
+        fig, ax = plt.subplots(1, 3) #2, 2)
         while (True):
             action = 0
             self.display(axis=ax)
@@ -80,8 +80,8 @@ class QLearn:
 
     def display(self, axis):
         plt.suptitle("Wins: " + str(self.wins) + "; Attempt: " + str(self.attempts) + "; Moves: " + str(
-            self.moves) + "; Q-state: [" + ' '.join(
-            str(round(e, 2)) for e in self.agent.get_state(self.agent.get_location(), self.environment)) + "]")
+            self.moves)) #+ "; Q-state: [" + ' '.join(
+            #str(round(e, 2)) for e in self.agent.get_state(self.agent.get_location(), self.environment)) + "]")
         axis[0].imshow(self.environment.display(self.agent.get_location(), self.agent.get_value()))
         axis[0].set_title("Environment")
         axis[1].imshow(
@@ -251,7 +251,7 @@ if __name__ == "__main__":
 
     os.chdir(IMG_SAVE_DIR)
 
-    start = (START_X, START_Y)
+    start = (START_Y, START_X)
     shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
 
     frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
