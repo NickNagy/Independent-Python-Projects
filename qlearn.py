@@ -2,7 +2,7 @@ import numpy as np
 import random
 import copy
 from matplotlib import pyplot as plt
-
+import os
 
 class QLearn:
     """params:
@@ -36,17 +36,17 @@ class QLearn:
     """
 
     def learn(self):
-        fig, ax = plt.subplots(2, 2)
+        fig, ax = plt.subplots(3) #2, 2)
         while (True):
             action = 0
             self.display(axis=ax)
             curr_location = self.agent.get_location()
-            curr_state = self.agent.get_state(curr_location)
+            curr_state = self.agent.get_state(curr_location, self.environment)
             if random.uniform(0, 1.0) > self.epsilon:  # exploitation
                 action = np.argmax(curr_state)
             else:  # choose random action
                 action = random.randint(0, len(self.agent.get_actions()) - 1)
-            if self.agent.can_move(action):
+            if self.agent.can_move(action, self.environment):
                 grid = self.environment.get_grid()
                 next_location = self.agent.move(action)
                 next_state = self.agent.get_state(next_location, self.environment)
@@ -81,11 +81,14 @@ class QLearn:
     def display(self, axis):
         plt.suptitle("Wins: " + str(self.wins) + "; Attempt: " + str(self.attempts) + "; Moves: " + str(
             self.moves) + "; Q-state: [" + ' '.join(
-            str(round(e, 2)) for e in self.agent.get_state(self.agent.get_location())) + "]")
-        axis[0, 0].imshow(self.environment.display(self.agent.get_location(), self.agent.get_value()))
-        axis[0, 1].imshow(
+            str(round(e, 2)) for e in self.agent.get_state(self.agent.get_location(), self.environment)) + "]")
+        axis[0].imshow(self.environment.display(self.agent.get_location(), self.agent.get_value()))
+        axis[0].set_title("Environment")
+        axis[1].imshow(
             self.agent.display_state(self.agent.get_state_key(self.agent.get_location(), self.environment)))
-        axis[1, 0].imshow(self.memorygrid)
+        axis[1].set_title("'Optimal' Next State")
+        axis[2].imshow(self.memorygrid)
+        axis[2].set_title("Heat Map")
         plt.savefig(fname=str(self.attempts) + "_" + str(self.moves))
         # plt.pause(0.001)
 
@@ -235,26 +238,23 @@ class Frogger_Environment:
         board[agent_loc[0]][agent_loc[1]] = agent_val
         return board
 
-
 DEATH = -100
 SUCCESS = 255
-
-plt.gray()
-
-import os
-
-os.chdir("D:/frogger")
-
 ENVIRONMENT_WIDTH = 5
 ENVIRONMENT_HEIGHT = 5
-
 START_X = int(ENVIRONMENT_WIDTH / 2)
 START_Y = ENVIRONMENT_HEIGHT - 1
+IMG_SAVE_DIR = "./Frogger Examples/"
 
-start = (START_X, START_Y)
-shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
+if __name__ == "__main__":
+    plt.gray()
 
-frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
+    os.chdir(IMG_SAVE_DIR)
+
+    start = (START_X, START_Y)
+    shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
+
+    frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
                    environment=Frogger_Environment(shape=shape),
                    start=start)
-frogger_q.learn()
+    frogger_q.learn()
