@@ -16,7 +16,7 @@ class QLearn:
        initializes class
     """
 
-    def __init__(self, agent, environment, start):
+    def __init__(self, agent, environment, start, alpha=0.9, gamma=0.9, epsilon=1):
         self.memorygrid = 255 * np.ones(environment.get_shape())
         self.agent = agent
         self.environment = environment
@@ -26,20 +26,22 @@ class QLearn:
         self.wins = 0
         self.start = start
         # TODO: check what typical values are for alpha and gamma
-        self.alpha = 0.9
-        self.gamma = 0.9
-        self.epsilon = 1
+        self.alpha = alpha
+        self.gamma = gamma
+        self.epsilon = epsilon
 
     """ params: none
         returns: none
         runs q-learning algorithm, updates agent location and q-states, displays environment and relevant data
     """
 
-    def learn(self):
+    def learn(self, attempts=10, save_plots=False):
+        history = np.zeros(shape=(attempts+1, 2))
         fig, ax = plt.subplots(1, 3) #2, 2)
-        while (True):
+        while self.attempts < attempts:
             action = 0
-            self.display(axis=ax)
+            if save_plots:
+                self.display(axis=ax)
             curr_location = self.agent.get_location()
             curr_state = self.agent.get_state(curr_location, self.environment)
             if random.uniform(0, 1.0) > self.epsilon:  # exploitation
@@ -56,7 +58,8 @@ class QLearn:
                 q = curr_state[action] + self.alpha * (next_reward + (self.gamma * next_projection) -
                                                        curr_state[action])
                 self.agent.update_state(current_key, action, q)
-                self.display(axis=ax)
+                if (save_plots):
+                    self.display(axis=ax)
                 self.memorygrid[curr_location[0]][curr_location[1]] *= 0.9
                 self.agent.update_location(next_location)
                 self.moves += 1
@@ -65,13 +68,17 @@ class QLearn:
                     self.agent.update_location(self.start)
                     self.attempts += 1
                     self.moves = 0
+                    history[self.attempts] = [self.attempts, self.wins]
                 if self.agent.has_succeeded(self.environment):
                     self.wins += 1
                     self.attempts += 1
                     self.moves = 0
                     self.agent.update_location(self.start)
+                    history[self.attempts] = [self.attempts, self.wins]
                 self.environment.update()
                 # plt.show()
+        plt.close()
+        return history
 
     """ params: axis
         returns: none
@@ -91,6 +98,17 @@ class QLearn:
         axis[2].set_title("Heat Map")
         plt.savefig(fname=str(self.attempts) + "_" + str(self.moves))
         # plt.pause(0.001)
+
+    def reset_params(self, new_alpha=None, new_gamma=None, new_epsilon=None):
+        self.moves = 0
+        self.attempts = 0
+        self.wins = 0
+        if new_alpha:
+            self.alpha = new_alpha
+        if new_gamma:
+            self.gamma = new_gamma
+        if new_epsilon:
+            self.epsilon = new_epsilon
 
 
 class Frogger_Agent:
@@ -246,6 +264,19 @@ START_X = int(ENVIRONMENT_WIDTH / 2)
 START_Y = ENVIRONMENT_HEIGHT - 1
 IMG_SAVE_DIR = "./Frogger Examples/"
 
+def plot_histories(history_list, hyperparam_list, hyperparam_str):
+    colors = ['red','orange','green','blue','purple','black','brown']
+    plt.figure()
+    plt.title("Attempts vs Successes")
+    plt.xlabel("Attempts")
+    plt.ylabel("Successes")
+    for i in range(len(history_list)):
+        history = history_list[i]
+        plt.plot(history[:,0], history[:,1], label=hyperparam_str + "=" + str(hyperparam_list[i]), color=colors[i%len(colors)])
+    plt.legend()
+    plt.show()
+    plt.savefig("Histories")
+
 if __name__ == "__main__":
     plt.gray()
 
@@ -254,7 +285,14 @@ if __name__ == "__main__":
     start = (START_Y, START_X)
     shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
 
+    alpha_list = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    history_list = []
     frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
-                   environment=Frogger_Environment(shape=shape),
-                   start=start)
-    frogger_q.learn()
+        environment=Frogger_Environment(shape=shape),start=start)
+    for i, alpha in enumerate(alpha_list):
+        print("alpha = " + str(alpha_list[i]))
+        frogger_q.reset_params(new_alpha=alpha)
+        history_list.append(frogger_q.learn(attempts=500))
+
+    plot_histories(history_list, alpha_list, "alpha")
+    
