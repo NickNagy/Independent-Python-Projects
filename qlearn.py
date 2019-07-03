@@ -35,13 +35,15 @@ class QLearn:
         runs q-learning algorithm, updates agent location and q-states, displays environment and relevant data
     """
 
-    def learn(self, attempts=10, save_plots=False):
-        history = np.zeros(shape=(attempts+1, 2))
-        fig, ax = plt.subplots(1, 3) #2, 2)
-        while self.attempts < attempts:
+    # << description >>
+    # measurement has 3 valid types: "attempts", "successes", "wins"
+    def learn(self, measurement, limit, save_plots=False):
+        history = np.zeros(shape=(limit+1, 3))
+        #fig, ax = plt.subplots(1, 3) #2, 2)
+        while self.moves < limit:
             action = 0
-            if save_plots:
-                self.display(axis=ax)
+            #if save_plots:
+            #    self.display(axis=ax)
             curr_location = self.agent.get_location()
             curr_state = self.agent.get_state(curr_location, self.environment)
             if random.uniform(0, 1.0) > self.epsilon:  # exploitation
@@ -49,6 +51,7 @@ class QLearn:
             else:  # choose random action
                 action = random.randint(0, len(self.agent.get_actions()) - 1)
             if self.agent.can_move(action, self.environment):
+                print("Moves: " + str(self.moves))
                 grid = self.environment.get_grid()
                 next_location = self.agent.move(action)
                 next_state = self.agent.get_state(next_location, self.environment)
@@ -59,6 +62,7 @@ class QLearn:
                                                        curr_state[action])
                 self.agent.update_state(current_key, action, q)
                 if (save_plots):
+                    fig, ax = plt.subplots(1,3)
                     self.display(axis=ax)
                 self.memorygrid[curr_location[0]][curr_location[1]] *= 0.9
                 self.agent.update_location(next_location)
@@ -67,14 +71,15 @@ class QLearn:
                 if self.agent.has_failed(self.environment):
                     self.agent.update_location(self.start)
                     self.attempts += 1
-                    self.moves = 0
-                    history[self.attempts] = [self.attempts, self.wins]
+                    #history[self.attempts] = [self.moves, self.attempts, self.wins]
+                    #self.moves = 0
                 if self.agent.has_succeeded(self.environment):
                     self.wins += 1
                     self.attempts += 1
-                    self.moves = 0
+                    #self.moves = 0
                     self.agent.update_location(self.start)
-                    history[self.attempts] = [self.attempts, self.wins]
+                    #history[self.attempts] = [self.moves, self.attempts, self.wins]
+                history[self.moves] = [self.moves, self.attempts, self.wins]
                 self.environment.update()
                 # plt.show()
         plt.close()
@@ -86,8 +91,9 @@ class QLearn:
     """
 
     def display(self, axis):
-        plt.suptitle("Wins: " + str(self.wins) + "; Attempt: " + str(self.attempts) + "; Moves: " + str(
-            self.moves)) #+ "; Q-state: [" + ' '.join(
+        plt.suptitle("Alpha = {:.2f}; Epsilon = {:.2f}\nWins: {} Attempt: {} Moves: {}".format(self.alpha, self.epsilon, self.wins, self.attempts, self.moves))
+        #plt.suptitle("Alpha = " + str(self.alpha) + "; Epsilon = " + str(self.epsilon) + "\nWins: " + str(self.wins) + "; Attempt: %.2f".format(self.attempts) + "; Moves: " + str(
+        #    self.moves)) #+ "; Q-state: [" + ' '.join(
             #str(round(e, 2)) for e in self.agent.get_state(self.agent.get_location(), self.environment)) + "]")
         axis[0].imshow(self.environment.display(self.agent.get_location(), self.agent.get_value()))
         axis[0].set_title("Environment")
@@ -96,7 +102,8 @@ class QLearn:
         axis[1].set_title("'Optimal' Next State")
         axis[2].imshow(self.memorygrid)
         axis[2].set_title("Heat Map")
-        plt.savefig(fname=str(self.attempts) + "_" + str(self.moves))
+        plt.savefig(fname=str(self.moves))
+        plt.close()
         # plt.pause(0.001)
 
     def reset_params(self, new_alpha=None, new_gamma=None, new_epsilon=None):
@@ -265,17 +272,23 @@ START_Y = ENVIRONMENT_HEIGHT - 1
 IMG_SAVE_DIR = "./Frogger Examples/"
 
 def plot_histories(history_list, hyperparam_list, hyperparam_str):
-    colors = ['red','orange','green','blue','purple','black','brown']
-    plt.figure()
-    plt.title("Attempts vs Successes")
-    plt.xlabel("Attempts")
-    plt.ylabel("Successes")
+    colors = ['red','orange','yellow', 'green','blue','cyan', 'purple','black','brown', 'pink']
+    fig, ax = plt.subplots(1, 2)
+    ax[0].set_title("Successes vs Moves")
+    ax[1].set_title("Ratio of Successes to Attempts vs Moves")
+    ax[0].set_xlabel("Moves")
+    ax[1].set_xlabel("Moves")
+    ax[0].set_ylabel("Successes")
+    ax[1].set_ylabel("Successes:Attempts")
     for i in range(len(history_list)):
+        label = hyperparam_str + "=" + str(hyperparam_list[i])
+        color = colors[i%len(colors)]
         history = history_list[i]
-        plt.plot(history[:,0], history[:,1], label=hyperparam_str + "=" + str(hyperparam_list[i]), color=colors[i%len(colors)])
+        ax[0].plot(history[:,0], history[:,2], label=label, color=color)
+        ax[1].plot(history[:,0], history[:,2]/history[:,1], label=label, color=color)
     plt.legend()
-    plt.show()
     plt.savefig("Histories")
+    plt.show()
 
 if __name__ == "__main__":
     plt.gray()
@@ -285,14 +298,16 @@ if __name__ == "__main__":
     start = (START_Y, START_X)
     shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
 
-    alpha_list = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-    history_list = []
     frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
-        environment=Frogger_Environment(shape=shape),start=start)
+        environment=Frogger_Environment(shape=shape),start=start, alpha=0.1)
+    frogger_q.learn("moves",100, save_plots=True)
+
+    '''alpha_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    history_list = []
     for i, alpha in enumerate(alpha_list):
         print("alpha = " + str(alpha_list[i]))
         frogger_q.reset_params(new_alpha=alpha)
-        history_list.append(frogger_q.learn(attempts=500))
+        history_list.append(frogger_q.learn("moves", 50000))
 
-    plot_histories(history_list, alpha_list, "alpha")
+    plot_histories(history_list, alpha_list, "alpha")'''
     
