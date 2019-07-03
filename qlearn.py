@@ -3,6 +3,7 @@ import random
 import copy
 from matplotlib import pyplot as plt
 import os
+import sys
 
 class QLearn:
     """params:
@@ -37,13 +38,10 @@ class QLearn:
 
     # << description >>
     # measurement has 3 valid types: "attempts", "successes", "wins"
-    def learn(self, measurement, limit, save_plots=False):
+    def learn(self, limit, save_plots=False):
         history = np.zeros(shape=(limit+1, 3))
-        #fig, ax = plt.subplots(1, 3) #2, 2)
         while self.moves < limit:
             action = 0
-            #if save_plots:
-            #    self.display(axis=ax)
             curr_location = self.agent.get_location()
             curr_state = self.agent.get_state(curr_location, self.environment)
             if random.uniform(0, 1.0) > self.epsilon:  # exploitation
@@ -51,7 +49,6 @@ class QLearn:
             else:  # choose random action
                 action = random.randint(0, len(self.agent.get_actions()) - 1)
             if self.agent.can_move(action, self.environment):
-                print("Moves: " + str(self.moves))
                 grid = self.environment.get_grid()
                 next_location = self.agent.move(action)
                 next_state = self.agent.get_state(next_location, self.environment)
@@ -62,6 +59,7 @@ class QLearn:
                                                        curr_state[action])
                 self.agent.update_state(current_key, action, q)
                 if (save_plots):
+                    print("Moves: {}".format(self.moves))
                     fig, ax = plt.subplots(1,3)
                     self.display(axis=ax)
                 self.memorygrid[curr_location[0]][curr_location[1]] *= 0.9
@@ -91,10 +89,7 @@ class QLearn:
     """
 
     def display(self, axis):
-        plt.suptitle("Alpha = {:.2f}; Epsilon = {:.2f}\nWins: {} Attempt: {} Moves: {}".format(self.alpha, self.epsilon, self.wins, self.attempts, self.moves))
-        #plt.suptitle("Alpha = " + str(self.alpha) + "; Epsilon = " + str(self.epsilon) + "\nWins: " + str(self.wins) + "; Attempt: %.2f".format(self.attempts) + "; Moves: " + str(
-        #    self.moves)) #+ "; Q-state: [" + ' '.join(
-            #str(round(e, 2)) for e in self.agent.get_state(self.agent.get_location(), self.environment)) + "]")
+        plt.suptitle("Alpha = {:.2f}; Gamma = {:.2f}; Epsilon = {:.2f}\nWins: {} Attempt: {} Moves: {}".format(self.alpha, self.gamma, self.epsilon, self.wins, self.attempts, self.moves))
         axis[0].imshow(self.environment.display(self.agent.get_location(), self.agent.get_value()))
         axis[0].set_title("Environment")
         axis[1].imshow(
@@ -106,16 +101,15 @@ class QLearn:
         plt.close()
         # plt.pause(0.001)
 
-    def reset_params(self, new_alpha=None, new_gamma=None, new_epsilon=None):
+    def reset_params(self, new_alpha=None, new_gamma=None):
         self.moves = 0
         self.attempts = 0
         self.wins = 0
+        self.epsilon = 1
         if new_alpha:
             self.alpha = new_alpha
         if new_gamma:
             self.gamma = new_gamma
-        if new_epsilon:
-            self.epsilon = new_epsilon
 
 
 class Frogger_Agent:
@@ -271,9 +265,14 @@ START_X = int(ENVIRONMENT_WIDTH / 2)
 START_Y = ENVIRONMENT_HEIGHT - 1
 IMG_SAVE_DIR = "./Frogger Examples/"
 
-def plot_histories(history_list, hyperparam_list, hyperparam_str):
-    colors = ['red','orange','yellow', 'green','blue','cyan', 'purple','black','brown', 'pink']
+def plot_histories(history_list, hyperparam_list, hyperparam_str, control_value, fig_name):
+    colors = ['red','orange','yellow', 'green','blue','cyan', 'purple','black','brown', 'pink', 'lime', 'magenta']
     fig, ax = plt.subplots(1, 2)
+    if hyperparam_str == "alpha":
+        title = "Gamma = {:.2f}".format(control_value)
+    else:
+        title = "Alpha = {:.2f}".format(control_value)
+    plt.suptitle(title)
     ax[0].set_title("Successes vs Moves")
     ax[1].set_title("Ratio of Successes to Attempts vs Moves")
     ax[0].set_xlabel("Moves")
@@ -281,17 +280,20 @@ def plot_histories(history_list, hyperparam_list, hyperparam_str):
     ax[0].set_ylabel("Successes")
     ax[1].set_ylabel("Successes:Attempts")
     for i in range(len(history_list)):
-        label = hyperparam_str + "=" + str(hyperparam_list[i])
+        label = "{} = {}".format(hyperparam_str, hyperparam_list[i])
         color = colors[i%len(colors)]
         history = history_list[i]
         ax[0].plot(history[:,0], history[:,2], label=label, color=color)
         ax[1].plot(history[:,0], history[:,2]/history[:,1], label=label, color=color)
     plt.legend()
-    plt.savefig("Histories")
+    plt.savefig(fname=fig_name,format='jpg')
     plt.show()
 
 if __name__ == "__main__":
-    plt.gray()
+    assert len(sys.argv) >= 4 and (sys.argv[3] == 'single' or sys.argv[3] == 'sweep_alpha' or sys.argv[3] == 'sweep_gamma')
+
+    alpha = float(sys.argv[1])
+    gamma = float(sys.argv[2])
 
     os.chdir(IMG_SAVE_DIR)
 
@@ -299,15 +301,29 @@ if __name__ == "__main__":
     shape = (ENVIRONMENT_WIDTH, ENVIRONMENT_HEIGHT)
 
     frogger_q = QLearn(agent=Frogger_Agent(actions=['up', 'down', 'left', 'right'], location=start),
-        environment=Frogger_Environment(shape=shape),start=start, alpha=0.1)
-    frogger_q.learn("moves",100, save_plots=True)
+        environment=Frogger_Environment(shape=shape),start=start, alpha=alpha, gamma=gamma)
 
-    '''alpha_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-    history_list = []
-    for i, alpha in enumerate(alpha_list):
-        print("alpha = " + str(alpha_list[i]))
-        frogger_q.reset_params(new_alpha=alpha)
-        history_list.append(frogger_q.learn("moves", 50000))
-
-    plot_histories(history_list, alpha_list, "alpha")'''
-    
+    if sys.argv[3] == "single":
+        moves = 100
+        if len(sys.argv) > 4:
+            moves = int(sys.argv[4])
+        plt.gray()
+        frogger_q.learn(moves, save_plots=True)
+    else:
+        hyperparam_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        history_list = []
+        fig_name = "histories"
+        if len(sys.argv) > 5:
+            fig_name = sys.argv[5]
+        if sys.argv[3] == "sweep_alpha":
+            hyperparam_str = "alpha"
+        else:
+            hyperparam_str = "gamma"
+        for i, hyperparam in enumerate(hyperparam_list):
+            print("{} = {:.2f}".format(hyperparam_str, hyperparam_list[i]))
+            if (hyperparam_str == "alpha"):
+                frogger_q.reset_params(new_alpha=hyperparam)
+            else:
+                frogger_q.reset_params(new_gamma=hyperparam)
+            history_list.append(frogger_q.learn(50000))
+        plot_histories(history_list, hyperparam_list, hyperparam_str, control_value, "gamma=point1")
